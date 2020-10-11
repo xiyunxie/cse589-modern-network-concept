@@ -50,12 +50,14 @@
 #define CMD_SIZE 100
 char* client_ip;
 char* server_ip;
+char host_name[BUFFER_SIZE];
 fd_set server_master_list, server_watch_list;
 fd_set client_master_list, client_watch_list;
 void client_mode(int client_port);
 void server_mode(int server_port);
 int connect_to_server(char *server_ip, int server_port);
 int client_bind_socket(int client_port);
+int command_to_list(char* cmd,char** res);
 int get_host_ip(char* buffer);
 /**
  * main function
@@ -103,15 +105,24 @@ void client_mode(int client_port){
                         if ((pos=strchr(cmd, '\n')) != NULL)
                             *pos = '\0';
 						printf("Command is: %s\n", cmd);
-						
+                        //cmd split used code at https://stackoverflow.com/questions/15472299/split-string-into-tokens-and-save-them-in-an-array
+						char *client_args[5];
+                        int count = 0;
+                        char *tmp = strtok(cmd, " ");
+                        while(tmp != NULL){
+                            client_args[count++] = tmp;
+                            tmp = strtok(NULL, " ");
+                        }
+                        for (int i = 0; i < count; ++i) 
+                            printf("%s\n", client_args[i]);
 						//Author command
-                        if((strcmp(cmd,"AUTHOR"))==0)
+                        if((strcmp(client_args[0],"AUTHOR"))==0)
 						{
 							cse4589_print_and_log("[AUTHOR:SUCCESS]\n");
 							cse4589_print_and_log("I, xiyunxie, have read and understood the course academic integrity policy.\n");
 							cse4589_print_and_log("[AUTHOR:END]\n");
 						}
-                        else if((strcmp(cmd,"IP"))==0)
+                        else if((strcmp(client_args[0],"IP"))==0)
 						{
 							// retrieve IP
                             char buffer[BUFFER_SIZE];
@@ -121,22 +132,89 @@ void client_mode(int client_port){
                             {
                                 cse4589_print_and_log("[IP:SUCCESS]\n");
                                 cse4589_print_and_log("IP:%s\n",buffer);
+                                cse4589_print_and_log("[IP:END]\n");
                             }
                             else
-                            {
                                 cse4589_print_and_log("[IP:ERROR]\n");
-
+						}
+                        else if((strcmp(client_args[0],"LOGIN"))==0)
+						{
+                            printf("login\n");
+                            if (count != 3) {
+                                printf("Login must have 3 args\n");
+                                return;
                             }
+							char* server_ip = client_args[1];
+                            int server_port = atoi(client_args[2]);
+                            printf("Connecting to server IP: %s with port %d\n",server_ip,server_port);
+                            
+							// cse4589_print_and_log("[IP:END]\n");
 						}
-                        else if((strcmp(cmd,"PORT"))==0)
+                        else if((strcmp(client_args[0],"REFRESH"))==0)
 						{
 							
-							cse4589_print_and_log("[PORT:END]\n");
+							// cse4589_print_and_log("[IP:END]\n");
 						}
-                        else if((strcmp(cmd,"LOGIN"))==0)
+                        else if((strcmp(client_args[0],"SEND"))==0)
+						{
+                            if (count != 3) {
+                                printf("Send request must have 3 args\n");
+                                return;
+                            }
+							char* receiver_ip = client_args[1];
+                            char* msg = client_args[2];
+                            printf("Sending '%s'to: %s\n",msg, receiver_ip);
+                            
+							// cse4589_print_and_log("[IP:END]\n");
+						}
+                        else if((strcmp(client_args[0],"BROADCAST"))==0)
+						{
+							if (count != 2) {
+                                printf("Msg cannot be empty\n");
+                                return;
+                            }
+                            char* msg = client_args[1];
+                            printf("Sending '%s' broadcast\n",msg);
+                            
+							// cse4589_print_and_log("[IP:END]\n");
+						}
+                        else if((strcmp(client_args[0],"BLOCK"))==0)
+						{
+							if (count != 2) {
+                                printf("Block must have 2 args\n");
+                                return;
+                            }
+                            char* block_ip = client_args[1];
+                            printf("Blocking %s\n", block_ip);
+                            
+							// cse4589_print_and_log("[IP:END]\n");
+						}
+                        else if((strcmp(client_args[0],"UNBLOCK"))==0)
+						{
+							if (count != 2) {
+                                printf("Unblock must have 2 args\n");
+                                return;
+                            }
+                            char* unblock_ip = client_args[1];
+                            printf("Unblocking %s\n", unblock_ip);
+                            
+							// cse4589_print_and_log("[IP:END]\n");
+						}
+                        else if((strcmp(client_args[0],"LOGOUT"))==0)
 						{
 							
-							cse4589_print_and_log("[PORT:END]\n");
+                            
+                            printf("Logging out\n");
+                            
+							// cse4589_print_and_log("[IP:END]\n");
+						}
+                        else if((strcmp(client_args[0],"EXIT"))==0)
+						{
+							
+                            
+                            printf("Exiting\n");
+                            
+							// cse4589_print_and_log("[IP:END]\n");
 						}
 						free(cmd);
                     }
@@ -353,6 +431,11 @@ int client_bind_socket(int client_port) {
     return 1;
     
 }
+int command_to_list(char* cmd,char** res){
+    char delim[] = " ";
+    char *ptr = strtok(cmd, delim);
+
+}
 int get_host_ip(char* buffer){
     char* google_dns_server = "8.8.8.8";
     int googel_dns_port = 53;
@@ -374,12 +457,13 @@ int get_host_ip(char* buffer){
     int get_socket_name = getsockname(sock, (struct sockaddr*) &host_addr, &host_addr_length);
          
     const char* ip = inet_ntop(AF_INET, &host_addr.sin_addr, buffer, BUFFER_SIZE);
+    
+    gethostname(host_name,  BUFFER_SIZE);
+    printf("Host name: %s\n", host_name);
     close(sock);     
     if(ip != NULL)
         return 1;
     
     else
         return 0;
-    
-    
 }
