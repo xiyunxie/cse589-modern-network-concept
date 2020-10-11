@@ -55,7 +55,7 @@ fd_set client_master_list, client_watch_list;
 void client_mode(int client_port);
 void server_mode(int server_port);
 int connect_to_server(char *server_ip, int server_port);
-int client_bind_socket(int client_port)
+int client_bind_socket(int client_port);
 /**
  * main function
  *
@@ -109,19 +109,19 @@ void client_mode(int client_port){
 							cse4589_print_and_log("I, xiyunxie, have read and understood the course academic integrity policy.\n");
 							cse4589_print_and_log("[AUTHOR:END]\n");
 						}
-                        else if((strcmp(msg,"IP"))==0)
+                        else if((strcmp(cmd,"IP"))==0)
 						{
-							showIP();
+							// printIP();
 							cse4589_print_and_log("[IP:END]\n");
 						}
-                        else if((strcmp(msg,"PORT"))==0)
+                        else if((strcmp(cmd,"PORT"))==0)
 						{
-							getmyport();
+							
 							cse4589_print_and_log("[PORT:END]\n");
 						}
-                        else if((strcmp(msg,"LOGIN"))==0)
+                        else if((strcmp(cmd,"LOGIN"))==0)
 						{
-							getmyport();
+							
 							cse4589_print_and_log("[PORT:END]\n");
 						}
 						free(cmd);
@@ -143,11 +143,7 @@ void client_mode(int client_port){
                         else {
                         	//Process incoming data from existing clients here ...
 
-                        	printf("\nClient sent me: %s\n", buffer);
-							printf("ECHOing it back to the remote host ... ");
-							if(send(fdaccept, buffer, strlen(buffer), 0) == strlen(buffer))
-								printf("Done!\n");
-							fflush(stdout);
+                        	
                         }
 
                         free(buffer);
@@ -159,7 +155,7 @@ void client_mode(int client_port){
 }
 void server_mode(int server_port){
     //running server
-	printf("Server on\n")
+	printf("Server on\n");
 	int port, server_socket, head_socket, selret, sock_index, fdaccept=0, caddr_len;
 	struct sockaddr_in server_addr, client_addr;
 	//fd_set master_list, watch_list;
@@ -170,12 +166,11 @@ void server_mode(int server_port){
 		perror("Cannot create socket");
 
 	//fill socket address required information
-	port = atoi(server_port);
 	bzero(&server_addr, sizeof(server_addr));
 
     server_addr.sin_family = AF_INET;
     server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-    server_addr.sin_port = htons(port);
+    server_addr.sin_port = htons(server_port);
 
     //server socket bind with address
     if(bind(server_socket, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0 )
@@ -271,8 +266,7 @@ void server_mode(int server_port){
         }
     }
 }
-int main(int argc, char **argv)
-{
+int main(int argc, char **argv){
 	/*Init. Logger*/
 	cse4589_init_log(argv[2]);
 
@@ -289,7 +283,7 @@ int main(int argc, char **argv)
 	{
 		server_mode(atoi(argv[2]));
 	}
-	else if(strcmp(argv[1], "c")
+	else if(strcmp(argv[1], "c")==0)
 	{
 		client_mode(atoi(argv[2]));
 	}
@@ -301,8 +295,7 @@ int main(int argc, char **argv)
 	return 0;
 }
 
-int connect_to_server(char *server_ip, int server_port)
-{
+int connect_to_server(char *server_ip, int server_port){
     int fdsocket, len;
     struct sockaddr_in remote_server_addr;
 
@@ -322,6 +315,7 @@ int connect_to_server(char *server_ip, int server_port)
     return fdsocket;
 }
 int client_bind_socket(int client_port) {
+    int fdsocket, len;
     struct sockaddr_in client_addrs;
     fdsocket = socket(AF_INET, SOCK_STREAM, 0);
     if (fdsocket < 0)
