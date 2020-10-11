@@ -76,31 +76,40 @@ void client_mode(int client_port){
     FD_SET(STDIN, &client_master_list);
     int head_socket = STDIN;
     int selret,sock_index;
-    while(TRUE){
+    printf("04\n");
+    while(1){
+        
+        printf("start infinity loop\n");
         memcpy(&client_watch_list, &client_master_list, sizeof(client_master_list));
 
         /* select() system call. This will BLOCK */
         selret = select(head_socket + 1, &client_watch_list, NULL, NULL, NULL);
+        printf("05\n");
         if(selret < 0)
-            perror("select failed.");
+            perror("select failed.\n");
 
         /* Check if we have sockets/STDIN to process */
+        printf("selret is %d\n",selret);
         if(selret > 0){
             /* Loop through socket descriptors to check which ones are ready */
             for(sock_index=0; sock_index<=head_socket; sock_index+=1){
-
+                printf("06\n");
                 if(FD_ISSET(sock_index, &client_watch_list)){
-
+                    printf("sock_index is %d\n",sock_index);
                     //new command from STDIN
                     if (sock_index == STDIN){
-                        
+                        printf("reading from stdin\n");
                     	char *cmd = (char*) malloc(sizeof(char)*CMD_SIZE);
 
                     	memset(cmd, '\0', CMD_SIZE);
-						if(fgets(cmd, CMD_SIZE-1, STDIN) == NULL) //Mind the newline character that will be written to cmd
+                        printf("ready to read command\n");
+                        fflush(stdout);	
+						if(fgets(cmd, CMD_SIZE-1, stdin) == NULL) //Mind the newline character that will be written to cmd
 							exit(-1);
-
-						printf("\nI got: %s\n", cmd);
+                        char* pos;
+                        if ((pos=strchr(cmd, '\n')) != NULL)
+                            *pos = '\0';
+						printf("Command is: %s\n", cmd);
 						
 						//Author command
                         if((strcmp(cmd,"AUTHOR"))==0)
@@ -318,6 +327,10 @@ int client_bind_socket(int client_port) {
     int fdsocket, len;
     struct sockaddr_in client_addrs;
     fdsocket = socket(AF_INET, SOCK_STREAM, 0);
+    //set socket to be reusable
+    int enable = 1;
+    if (setsockopt(fdsocket, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) < 0)
+        perror("make socket resuable failed");
     if (fdsocket < 0)
     {
         perror("Cannot create socket");
