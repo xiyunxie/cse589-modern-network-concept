@@ -56,6 +56,7 @@ void client_mode(int client_port);
 void server_mode(int server_port);
 int connect_to_server(char *server_ip, int server_port);
 int client_bind_socket(int client_port);
+int get_host_ip(char* buffer);
 /**
  * main function
  *
@@ -76,33 +77,25 @@ void client_mode(int client_port){
     FD_SET(STDIN, &client_master_list);
     int head_socket = STDIN;
     int selret,sock_index;
-    printf("04\n");
     while(1){
         
-        printf("start infinity loop\n");
         memcpy(&client_watch_list, &client_master_list, sizeof(client_master_list));
 
         /* select() system call. This will BLOCK */
         selret = select(head_socket + 1, &client_watch_list, NULL, NULL, NULL);
-        printf("05\n");
         if(selret < 0)
             perror("select failed.\n");
 
         /* Check if we have sockets/STDIN to process */
-        printf("selret is %d\n",selret);
         if(selret > 0){
             /* Loop through socket descriptors to check which ones are ready */
             for(sock_index=0; sock_index<=head_socket; sock_index+=1){
-                printf("06\n");
                 if(FD_ISSET(sock_index, &client_watch_list)){
-                    printf("sock_index is %d\n",sock_index);
                     //new command from STDIN
                     if (sock_index == STDIN){
-                        printf("reading from stdin\n");
                     	char *cmd = (char*) malloc(sizeof(char)*CMD_SIZE);
 
                     	memset(cmd, '\0', CMD_SIZE);
-                        printf("ready to read command\n");
                         fflush(stdout);	
 						if(fgets(cmd, CMD_SIZE-1, stdin) == NULL) //Mind the newline character that will be written to cmd
 							exit(-1);
@@ -120,8 +113,20 @@ void client_mode(int client_port){
 						}
                         else if((strcmp(cmd,"IP"))==0)
 						{
-							// printIP();
-							cse4589_print_and_log("[IP:END]\n");
+							// retrieve IP
+                            char buffer[BUFFER_SIZE];
+                            int get_host_successful = get_host_ip(buffer);
+         
+                            if(get_host_successful == 1)
+                            {
+                                cse4589_print_and_log("[IP:SUCCESS]\n");
+                                cse4589_print_and_log("IP:%s\n",buffer);
+                            }
+                            else
+                            {
+                                cse4589_print_and_log("[IP:ERROR]\n");
+
+                            }
 						}
                         else if((strcmp(cmd,"PORT"))==0)
 						{
@@ -346,5 +351,35 @@ int client_bind_socket(int client_port) {
     }
     printf("Client bind socket to port successful\n");
     return 1;
+    
+}
+int get_host_ip(char* buffer){
+    char* google_dns_server = "8.8.8.8";
+    int googel_dns_port = 53;
+    struct sockaddr_in google_addr;
+    struct sockaddr_in host_addr;
+    socklen_t host_addr_length = sizeof(host_addr);
+    int sock = socket ( AF_INET, SOCK_DGRAM, 0);
+     
+    if(sock < 0)
+        perror("Socket error");
+    
+    memset( &host_addr, 0, sizeof(host_addr) );
+    //fill google connection information
+    google_addr.sin_family = AF_INET;
+    google_addr.sin_addr.s_addr = inet_addr( google_dns_server );
+    google_addr.sin_port = htons( googel_dns_port );
+    //connect with google
+    int google_connection = connect( sock , (struct sockaddr*) &google_addr , sizeof(google_addr) );
+    int get_socket_name = getsockname(sock, (struct sockaddr*) &host_addr, &host_addr_length);
+         
+    const char* ip = inet_ntop(AF_INET, &host_addr.sin_addr, buffer, BUFFER_SIZE);
+    close(sock);     
+    if(ip != NULL)
+        return 1;
+    
+    else
+        return 0;
+    
     
 }
