@@ -411,11 +411,14 @@ void server_mode(int server_port){
                         strcpy(rec.ip_addr,client_ip);
                         printf("ip copy done\n");
                         strcpy(rec.hostname , hostname);
+                        printf("copy hostname done\n");
                         rec.client_port = port;
                         rec.msg_sent = 0;
                         rec.msg_received = 0;
                         rec.status=1;
-                        printf("in struct, ip is %s\n",rec.client_port);
+                        printf("list copied\n");
+                        fflush(stdout);
+                        printf("in struct, ip is %d\n",rec.client_port);
 
                         /* Add to watched socket list */
                         FD_SET(fdaccept, &server_master_list);
