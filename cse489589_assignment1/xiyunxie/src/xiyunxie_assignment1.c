@@ -59,6 +59,7 @@ int client_logged_in = 0;
 fd_set server_master_list, server_watch_list;
 fd_set client_master_list, client_watch_list;
 struct client_record {
+    int id;
     char ip_addr[INET_ADDRSTRLEN];
     char hostname[HOST_SIZE];
     int client_port;
@@ -67,8 +68,11 @@ struct client_record {
     int status;
     struct client_record *blockedIPs[3];
     int sockfd;
-    struct client_record *next_client;
- };
+};
+struct client_record client_list_head;
+struct client_record client_list[4];
+
+
 void client_mode(int client_port);
 void server_mode(int server_port);
 int connect_to_server(char *server_ip, int server_port,char* client_port);
@@ -290,8 +294,8 @@ void server_mode(int server_port){
     if(server_socket < 0)
 		perror("Cannot create socket");
     int enable = 1;
-    if (setsockopt(server_socket, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) < 0)
-        perror("make socket resuable failed");
+    // if (setsockopt(server_socket, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) < 0)
+    //     perror("make socket resuable failed");
     if (setsockopt(server_socket, SOL_SOCKET, SO_REUSEPORT, &enable, sizeof(enable)) < 0)
         perror("make socket resuable failed");
 	//fill socket address required information
@@ -396,12 +400,23 @@ void server_mode(int server_port){
                         
                         int port = atoi(client_port);
                         
-                        char host[HOST_SIZE];
+                        char hostname[HOST_SIZE];
                         
-	                    getnameinfo((struct sockaddr *)&client_addr, caddr_len,host, HOST_SIZE, 0,0,0);
+	                    getnameinfo((struct sockaddr *)&client_addr, caddr_len,hostname, HOST_SIZE, 0,0,0);
                         
-                        printf("Client %s of IP %s with port %d connected!\n",host,client_ip,port);     
+                        printf("Client %s of IP %s with port %d connected!\n",hostname,client_ip,port);     
                         fflush(stdout);
+                        struct client_record rec = {.id=++client_count};
+                        printf("in struct, id is %d\n",rec.id);
+                        strcpy(rec.ip_addr,client_ip);
+                        printf("ip copy done\n");
+                        strcpy(rec.hostname , hostname);
+                        rec.client_port = port;
+                        rec.msg_sent = 0;
+                        rec.msg_received = 0;
+                        rec.status=1;
+                        printf("in struct, ip is %s\n",rec.client_port);
+
                         /* Add to watched socket list */
                         FD_SET(fdaccept, &server_master_list);
                         if(fdaccept > head_socket) head_socket = fdaccept;
