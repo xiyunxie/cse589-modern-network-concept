@@ -40,7 +40,7 @@
 #include <ifaddrs.h>
 #include <unistd.h>
 #include <errno.h>
-
+#include <ctype.h>
 #define TRUE 1
 #define MSG_SIZE 256
 #define BUFFER_SIZE 256
@@ -48,17 +48,35 @@
 #define STDIN 0
 #define TRUE 1
 #define CMD_SIZE 100
+#define HOST_SIZE 100
+#define PORT_SIZE 100
 char* client_ip;
+char c_port[PORT_SIZE];
 char* server_ip;
+int serverfd_for_client;
 char host_name[BUFFER_SIZE];
+int client_logged_in = 0;
 fd_set server_master_list, server_watch_list;
 fd_set client_master_list, client_watch_list;
+struct client_record {
+    char ip_addr[INET_ADDRSTRLEN];
+    char hostname[HOST_SIZE];
+    int client_port;
+    int msg_received;
+    int msg_sent;
+    int status;
+    struct client_record *blockedIPs[3];
+    int sockfd;
+    struct client_record *next_client;
+ };
 void client_mode(int client_port);
 void server_mode(int server_port);
-int connect_to_server(char *server_ip, int server_port);
+int connect_to_server(char *server_ip, int server_port,char* client_port);
 int client_bind_socket(int client_port);
 int command_to_list(char* cmd,char** res);
 int get_host_ip(char* buffer);
+int valid_ip(char* ip_address);
+int valid_port(char* port);
 /**
  * main function
  *
@@ -70,6 +88,7 @@ int get_host_ip(char* buffer);
 void client_mode(int client_port){
 	
     //client bind socket
+    printf("client port %d\n",client_port);
     int client_bind = client_bind_socket(client_port);
     if(client_bind==0)
         exit(-1);
@@ -142,11 +161,24 @@ void client_mode(int client_port){
                             printf("login\n");
                             if (count != 3) {
                                 printf("Login must have 3 args\n");
-                                return;
+                                continue;
                             }
 							char* server_ip = client_args[1];
+                            
+                            printf("ip valid result: %d\n",valid_ip(server_ip));
+                            printf("port valid result: %d\n",valid_port(client_args[2]));
+                            if(valid_ip( server_ip)==0||valid_port(client_args[2])==0){
+                                cse4589_print_and_log("[LOGIN:ERROR]\n");
+                                cse4589_print_and_log("[LOGIN:END]\n");
+                                continue;
+                            }
+                            printf("ip and port valid\n");
                             int server_port = atoi(client_args[2]);
+                            
+                            serverfd_for_client = connect_to_server(server_ip,server_port,c_port);
                             printf("Connecting to server IP: %s with port %d\n",server_ip,server_port);
+                            FD_SET(serverfd_for_client, &client_master_list);
+                            client_logged_in = 1;
                             
 							// cse4589_print_and_log("[IP:END]\n");
 						}
@@ -247,6 +279,7 @@ void client_mode(int client_port){
 }
 void server_mode(int server_port){
     //running server
+    int client_count = 0;
 	printf("Server on\n");
 	int port, server_socket, head_socket, selret, sock_index, fdaccept=0, caddr_len;
 	struct sockaddr_in server_addr, client_addr;
@@ -256,14 +289,18 @@ void server_mode(int server_port){
 	server_socket = socket(AF_INET, SOCK_STREAM, 0);
     if(server_socket < 0)
 		perror("Cannot create socket");
-
+    int enable = 1;
+    if (setsockopt(server_socket, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) < 0)
+        perror("make socket resuable failed");
+    if (setsockopt(server_socket, SOL_SOCKET, SO_REUSEPORT, &enable, sizeof(enable)) < 0)
+        perror("make socket resuable failed");
 	//fill socket address required information
 	bzero(&server_addr, sizeof(server_addr));
 
     server_addr.sin_family = AF_INET;
     server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
     server_addr.sin_port = htons(server_port);
-
+    printf("trying to bind socket\n");
     //server socket bind with address
     if(bind(server_socket, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0 )
     	perror("Server bind failed");
@@ -273,6 +310,7 @@ void server_mode(int server_port){
     	perror("Unable to listen on port");
     printf("Server start listening\n");
     /* ---------------------------------------------------------------------------- */
+
 
     /* Zero select FD sets */
     FD_ZERO(&server_master_list);
@@ -306,29 +344,69 @@ void server_mode(int server_port){
                     	char *cmd = (char*) malloc(sizeof(char)*CMD_SIZE);
 
                     	memset(cmd, '\0', CMD_SIZE);
-						if(fgets(cmd, CMD_SIZE-1, STDIN) == NULL) //Mind the newline character that will be written to cmd
+                        fflush(stdout);	
+						if(fgets(cmd, CMD_SIZE-1, stdin) == NULL)
 							exit(-1);
-
-						printf("\nI got: %s\n", cmd);
-						
-						//Process PA1 commands here ...
-
+                        char* pos;
+                        if ((pos=strchr(cmd, '\n')) != NULL)
+                            *pos = '\0';
+						printf("Command is: %s\n", cmd);
+                        //cmd split used code at https://stackoverflow.com/questions/15472299/split-string-into-tokens-and-save-them-in-an-array
+						char *client_args[5];
+                        int count = 0;
+                        char *tmp = strtok(cmd, " ");
+                        while(tmp != NULL){
+                            client_args[count++] = tmp;
+                            tmp = strtok(NULL, " ");
+                        }
+                        for (int i = 0; i < count; ++i) 
+                            printf("%s\n", client_args[i]);
+						//Author command
+                        if((strcmp(client_args[0],"AUTHOR"))==0)
+						{
+							cse4589_print_and_log("[AUTHOR:SUCCESS]\n");
+							cse4589_print_and_log("I, xiyunxie, have read and understood the course academic integrity policy.\n");
+							cse4589_print_and_log("[AUTHOR:END]\n");
+						}
 						free(cmd);
                     }
-                    /* Check if new client is requesting connection */
+                    //new client is requesting connection
                     else if(sock_index == server_socket){
                         caddr_len = sizeof(client_addr);
                         fdaccept = accept(server_socket, (struct sockaddr *)&client_addr, &caddr_len);
+                        printf("new client accepted\n");
                         if(fdaccept < 0)
                             perror("Accept failed.");
-
-						printf("\nRemote Host connected!\n");                        
-
+                        printf("port is %d\n",client_addr.sin_port);
+						char client_ip[INET_ADDRSTRLEN];
+                        // int client_port; 
+	                    inet_ntop(AF_INET,&client_addr.sin_addr.s_addr,client_ip, INET_ADDRSTRLEN);
+                        // fflush(stdout);
+                       
+                       
+                        char client_port[PORT_SIZE];
+                        printf("malloc ok\n");
+                        memset(client_port, '\0', PORT_SIZE);
+                        printf("memset done\n");
+                        // fflush(stdout);
+                        
+                        int k = recv(fdaccept,&client_port,PORT_SIZE,0);
+                        printf("recv %d\n",k);
+                        // fflush(stdout);
+                        
+                        int port = atoi(client_port);
+                        
+                        char host[HOST_SIZE];
+                        
+	                    getnameinfo((struct sockaddr *)&client_addr, caddr_len,host, HOST_SIZE, 0,0,0);
+                        
+                        printf("Client %s of IP %s with port %d connected!\n",host,client_ip,port);     
+                        fflush(stdout);
                         /* Add to watched socket list */
                         FD_SET(fdaccept, &server_master_list);
                         if(fdaccept > head_socket) head_socket = fdaccept;
                     }
-                    /* Read from existing clients */
+                    //message from existing clients
                     else{
                         /* Initialize buffer to receieve response */
                         char *buffer = (char*) malloc(sizeof(char)*BUFFER_SIZE);
@@ -338,7 +416,7 @@ void server_mode(int server_port){
                             close(sock_index);
                             printf("Remote Host terminated connection!\n");
 
-                            /* Remove from watched list */
+                            
                             FD_CLR(sock_index, &server_master_list);
                         }
                         else {
@@ -377,6 +455,7 @@ int main(int argc, char **argv){
 	}
 	else if(strcmp(argv[1], "c")==0)
 	{
+        strcpy(c_port,argv[2]);
 		client_mode(atoi(argv[2]));
 	}
 	else
@@ -387,23 +466,29 @@ int main(int argc, char **argv){
 	return 0;
 }
 
-int connect_to_server(char *server_ip, int server_port){
+int connect_to_server(char *server_ip, int server_port,char* client_port){
     int fdsocket, len;
-    struct sockaddr_in remote_server_addr;
+    struct sockaddr_in server_addr;
 
     fdsocket = socket(AF_INET, SOCK_STREAM, 0);
     if(fdsocket < 0)
        perror("Failed to create socket");
-
-    bzero(&remote_server_addr, sizeof(remote_server_addr));
-    remote_server_addr.sin_family = AF_INET;
-    inet_pton(AF_INET, server_ip, &remote_server_addr.sin_addr);
-    remote_server_addr.sin_port = htons(server_port);
-
-    if(connect(fdsocket, (struct sockaddr*)&remote_server_addr, sizeof(remote_server_addr)) < 0)
+    printf("server socket for host created\n");
+    bzero(&server_addr, sizeof(server_addr));
+    server_addr.sin_family = AF_INET;
+    inet_pton(AF_INET, server_ip, &server_addr.sin_addr);
+    printf("server port %d\n",server_port);
+    server_addr.sin_port = htons(server_port);
+    printf("trying to connect\n");
+    if(connect(fdsocket, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0)
         perror("Connect failed");
 	else
 		printf("Connected to server\n");
+    
+    int s = send(fdsocket,client_port, sizeof(client_port),0);
+    
+    printf("send port is %d\n",s);
+    printf("connection test done\n");
     return fdsocket;
 }
 int client_bind_socket(int client_port) {
@@ -414,8 +499,7 @@ int client_bind_socket(int client_port) {
     int enable = 1;
     if (setsockopt(fdsocket, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) < 0)
         perror("make socket resuable failed");
-    if (fdsocket < 0)
-    {
+    if (fdsocket < 0){
         perror("Cannot create socket");
         return 0;
     }
@@ -466,4 +550,18 @@ int get_host_ip(char* buffer){
     
     else
         return 0;
+}
+int valid_ip(char* ip_address){
+    //used code in https://stackoverflow.com/questions/791982/determine-if-a-string-is-a-valid-ipv4-address-in-c
+    struct sockaddr_in sa;
+	return inet_pton(AF_INET, ip_address, &sa.sin_addr);
+	
+}
+int valid_port(char* port){
+    for (int i = 0; i < strlen(port); i++)
+        if (isdigit(port[i]) == 0)
+            return 0;
+    if(atoi(port)>65535)
+        return 0;
+    return 1;
 }
