@@ -51,17 +51,18 @@
 #define HOST_SIZE 100
 #define PORT_SIZE 100
 #define IP_SIZE 100
+char ip_for_client[BUFFER_SIZE];
 char* client_ip;
 char c_port[PORT_SIZE];
 char* server_ip;
 int serverfd_for_client;
 char host_name[BUFFER_SIZE];
-int client_logged_in = 0;
+int client_logged_in = 1;
 fd_set server_master_list, server_watch_list;
 fd_set client_master_list, client_watch_list;
 struct client_record {
     int id;
-    char ip_addr[INET_ADDRSTRLEN];
+    char ip_addr[BUFFER_SIZE];
     char hostname[HOST_SIZE];
     int client_port;
     int msg_received;
@@ -73,10 +74,9 @@ struct client_record {
 };
 struct client_record client_list_head;
 struct client_record client_list[4];
-struct client_msg
-{
+struct client_msg{
 	char cmd[CMD_SIZE];
-	char ip[IP_SIZE];
+	char sender_ip[IP_SIZE];
 	char msg[BUFFER_SIZE];
 };
 
@@ -89,8 +89,9 @@ int get_host_ip(char* buffer);
 int valid_ip(char* ip_address);
 int valid_port(char* port);
 int ip_exist(char* client_ip);
+void sort_client_list(struct client_record client_list[4]);
 void client_list_to_buf(struct client_record client_list[4],char* buffer,int max_index);
-void buf_other_clients(char* buffer);
+void buf_clients(char* buffer);
 /**
  * main function
  *
@@ -112,6 +113,7 @@ void client_mode(int client_port){
     FD_SET(STDIN, &client_master_list);
     int head_socket = STDIN;
     int selret,sock_index;
+    struct client_msg client_message;
     while(1){
         
         memcpy(&client_watch_list, &client_master_list, sizeof(client_master_list));
@@ -135,11 +137,21 @@ void client_mode(int client_port){
 						if(fgets(cmd, CMD_SIZE-1, stdin) == NULL) //Mind the newline character that will be written to cmd
 							exit(-1);
                         char *cmd_for_send = (char*) malloc(sizeof(char)*CMD_SIZE);
-                        strcpy(cmd_for_send,cmd);
+                        // strcpy(cmd_for_send,cmd);
+                        memset(cmd_for_send, '\0', CMD_SIZE);
+                        // strcpy(cmd_for_send,cmd);
                         char* pos;
                         if ((pos=strchr(cmd, '\n')) != NULL)
                             *pos = '\0';
                         strcpy(cmd_for_send,cmd);
+                        // if ((pos=strchr(cmd_for_send, '\n')) != NULL){
+                        //     *pos = '\0';
+                        //     printf("next line found\n");
+                        // }
+                            
+                        // memcpy(cmd_for_send,cmd,strlen(cmd)+1);
+                        printf("str length for cmd %d\n",strlen(cmd_for_send));
+                        printf("Command for send is: %s\n", cmd_for_send);
 						printf("Command is: %s\n", cmd);
                         //cmd split used code at https://stackoverflow.com/questions/15472299/split-string-into-tokens-and-save-them-in-an-array
 						char *client_args[5];
@@ -196,17 +208,28 @@ void client_mode(int client_port){
                             printf("Connecting to server IP: %s with port %d\n",server_ip,server_port);
                             FD_SET(serverfd_for_client, &client_master_list);
                             client_logged_in = 1;
+                            char update[BUFFER_SIZE];
+                            recv(serverfd_for_client, update, BUFFER_SIZE, 0);
+                            printf(update);
                             cse4589_print_and_log("[LOGIN:SUCCESS]\n");
                             cse4589_print_and_log("[LOGIN:END]\n");
 							// cse4589_print_and_log("[IP:END]\n");
 						}
                         else if((strcmp(client_args[0],"REFRESH"))==0)
 						{
+                            if(client_logged_in==0){
+                                printf("NOT logged in\n");
+                                cse4589_print_and_log("[REFRESH:ERROR]\n");
+                                fflush(stdout);
+                                cse4589_print_and_log("[REFRESH:END]\n");
+                                fflush(stdout);
+                                continue;
+                            }
 							send(serverfd_for_client, "REFRESH", 7, 0);
                             char update[BUFFER_SIZE];
                             recv(serverfd_for_client, update, BUFFER_SIZE, 0);
-                            
-                            cse4589_print_and_log("[REFRESH:SUCCESS]\n",);
+                            printf(update);
+                            cse4589_print_and_log("[REFRESH:SUCCESS]\n");
                             fflush(stdout);
                             cse4589_print_and_log("[REFRESH:END]\n");
 							// cse4589_print_and_log("[IP:END]\n");
@@ -217,9 +240,59 @@ void client_mode(int client_port){
                                 printf("Send request must have 3 or more args\n");
                                 continue;
                             }
+                            if(client_logged_in==0){
+                                printf("NOT logged in\n");
+                                cse4589_print_and_log("[SEND:ERROR]\n");
+                                fflush(stdout);
+                                cse4589_print_and_log("[SEND:END]\n");
+                                fflush(stdout);
+                                continue;
+                            }
+                            printf("packeting message\n");
 							char* receiver_ip = client_args[1];
                             char msg[BUFFER_SIZE];
                             int msg_start=6;
+                            int msg_length=0;
+                            while(cmd_for_send[msg_start]!=' '){
+                                msg_start++;
+                            }
+                            printf("get where to start\n");
+                            msg_start+=1;
+                            while(cmd_for_send[msg_start+msg_length]!='\0'){
+                                msg_length++;
+                            }
+                            printf("get msg length\n");
+                            char *msg_ptr = cmd_for_send+msg_start;
+                            memset(&client_message, '\0', sizeof(client_message));
+                            strcpy(client_message.cmd,"SEND");
+                            strncpy(client_message.msg,msg_ptr,msg_length);
+                            
+                            printf("Sending '%s 'to: %s\n",client_message.msg, receiver_ip);
+                            
+							// cse4589_print_and_log("[IP:END]\n");
+						}
+                        else if((strcmp(client_args[0],"BROADCAST"))==0)
+						{
+							if (count != 2) {
+                                printf("Msg cannot be empty\n");
+                                printf("NOT logged in\n");
+                                cse4589_print_and_log("[SEND:ERROR]\n");
+                                fflush(stdout);
+                                cse4589_print_and_log("[SEND:END]\n");
+                                fflush(stdout);
+                                continue;
+                            }
+                            if(client_logged_in==0){
+                                printf("NOT logged in\n");
+                                cse4589_print_and_log("[SEND:ERROR]\n");
+                                fflush(stdout);
+                                cse4589_print_and_log("[SEND:END]\n");
+                                fflush(stdout);
+                                continue;
+                            }
+							char* receiver_ip = client_args[1];
+                            char msg[BUFFER_SIZE];
+                            int msg_start=11;
                             int msg_length=0;
                             while(cmd_for_send[msg_start]!=' '){
                                 msg_start++;
@@ -228,21 +301,12 @@ void client_mode(int client_port){
                             while(cmd_for_send[msg_start]!='\0'){
                                 msg_length++;
                             }
-                            strcpy(client_msg.cmd,"SEND");
-                            strcpy(client_msg.msg,&(cmd_for_send+msg_start),msg_length);
+                            char *msg_ptr = cmd_for_send+msg_start;
+                            memset(&client_message, '\0', sizeof(client_message));
+                            strcpy(client_message.cmd,"BROADCAST");
+                            strncpy(client_message.msg,msg_ptr,msg_length);
                             
-                            printf("Sending '%s'to: %s\n",client_msg.msg[msg_length], receiver_ip);
-                            
-							// cse4589_print_and_log("[IP:END]\n");
-						}
-                        else if((strcmp(client_args[0],"BROADCAST"))==0)
-						{
-							if (count != 2) {
-                                printf("Msg cannot be empty\n");
-                                return;
-                            }
-                            char* msg = client_args[1];
-                            printf("Sending '%s' broadcast\n",msg);
+                            printf("Sending '%s'to: %s\n",client_message.msg[msg_length], receiver_ip);
                             
 							// cse4589_print_and_log("[IP:END]\n");
 						}
@@ -250,9 +314,13 @@ void client_mode(int client_port){
 						{
 							if (count != 2) {
                                 printf("Block must have 2 args\n");
-                                return;
+                                continue;
                             }
-                            char* block_ip = client_args[1];
+                            memset(&client_message, '\0', sizeof(client_message));
+                            char* block_ip;
+                            // strcpy( block_ip, client_args[1]);
+                            strcpy(client_message.cmd,"BLOCK");
+                            strcpy(client_message.msg,client_args[1]);
                             printf("Blocking %s\n", block_ip);
                             
 							// cse4589_print_and_log("[IP:END]\n");
@@ -260,18 +328,30 @@ void client_mode(int client_port){
                         else if((strcmp(client_args[0],"UNBLOCK"))==0)
 						{
 							if (count != 2) {
-                                printf("Unblock must have 2 args\n");
-                                return;
+                                printf("Block must have 2 args\n");
+                                continue;
                             }
-                            char* unblock_ip = client_args[1];
-                            printf("Unblocking %s\n", unblock_ip);
+                            memset(&client_message, '\0', sizeof(client_message));
+                            char* unblock_ip;
+                            // strcpy( unblock_ip, client_args[1]);
+                            strcpy(client_message.cmd,"UNBLOCK");
+                            strcpy(client_message.msg,client_args[1]);
+                            printf("Unlocking %s\n", unblock_ip);
                             
 							// cse4589_print_and_log("[IP:END]\n");
 						}
                         else if((strcmp(client_args[0],"LOGOUT"))==0)
 						{
-							
-                            
+							if(client_logged_in==0){
+                                printf("NOT logged in\n");
+                                cse4589_print_and_log("[LOGOUT:ERROR]\n");
+                                fflush(stdout);
+                                cse4589_print_and_log("[LOGOUT:END]\n");
+                                fflush(stdout);
+                                continue;
+                            }
+                            memset(&client_message, '\0', sizeof(client_message));
+                            strcpy(client_message.cmd,"LOGOUT");
                             printf("Logging out\n");
                             
 							// cse4589_print_and_log("[IP:END]\n");
@@ -279,7 +359,16 @@ void client_mode(int client_port){
                         else if((strcmp(client_args[0],"EXIT"))==0)
 						{
 							
-                            
+                            if(client_logged_in==0){
+                                printf("NOT logged in\n");
+                                cse4589_print_and_log("[EXIT:ERROR]\n");
+                                fflush(stdout);
+                                cse4589_print_and_log("[EXIT:END]\n");
+                                fflush(stdout);
+                                continue;
+                            }
+                            memset(&client_message, '\0', sizeof(client_message));
+                            strcpy(client_message.cmd,"EXIT");
                             printf("Exiting\n");
                             
 							// cse4589_print_and_log("[IP:END]\n");
@@ -349,7 +438,7 @@ void server_mode(int server_port){
     	perror("Unable to listen on port");
     printf("Server start listening\n");
     /* ---------------------------------------------------------------------------- */
-
+    struct client_msg client_send_data;
 
     /* Zero select FD sets */
     FD_ZERO(&server_master_list);
@@ -418,7 +507,8 @@ void server_mode(int server_port){
                                 else{
                                     strcpy(login,"logged-out");
                                 }
-                                cse4589_print_and_log("%-5d%-35s%-8d%-8d%-8s\n", print_index++, client_list[i].hostname, client_list[i].msg_sent, client_list[i].msg_received, status);
+                                printf("%-5d%-35s%-8d%-8d%-8s\n", print_index++, client_list[i].hostname, client_list[i].msg_sent, client_list[i].msg_received, login);
+                                cse4589_print_and_log("%-5d%-35s%-8d%-8d%-8s\n", print_index++, client_list[i].hostname, client_list[i].msg_sent, client_list[i].msg_received, login);
                             }
 						}
 						free(cmd);
@@ -431,9 +521,9 @@ void server_mode(int server_port){
                         if(fdaccept < 0)
                             perror("Accept failed.");
                         printf("port is %d\n",client_addr.sin_port);
-						char client_ip[INET_ADDRSTRLEN];
+						char client_ip[BUFFER_SIZE];
                         // int client_port; 
-	                    inet_ntop(AF_INET,&client_addr.sin_addr.s_addr,client_ip, INET_ADDRSTRLEN);
+	                    inet_ntop(AF_INET,&client_addr.sin_addr.s_addr,client_ip, BUFFER_SIZE);
                         // fflush(stdout);
                        
                        
@@ -443,7 +533,7 @@ void server_mode(int server_port){
                         printf("memset done\n");
                         // fflush(stdout);
                         
-                        int k = recv(fdaccept,&client_port,PORT_SIZE,0);
+                        int k = recv(fdaccept,client_port,PORT_SIZE,0);
                         printf("recv %d\n",k);
                         // fflush(stdout);
                         
@@ -456,7 +546,7 @@ void server_mode(int server_port){
                         printf("Client %s of IP %s with port %d connected!\n",hostname,client_ip,port);     
                         fflush(stdout);
                         int exist_index = ip_exist(client_ip);
-                        if(exist==-1){
+                        if(exist_index==-1){
                             printf("new client login\n");
                             struct client_record rec = {.id=client_count+1};
                             printf("in struct, id is %d\n",rec.id);
@@ -469,27 +559,32 @@ void server_mode(int server_port){
                             rec.msg_received = 0;
                             rec.status=1;
                             rec.struct_occupied=1;
+                            rec.sockfd = fdaccept;
                             printf("list copied\n");
                             fflush(stdout);
                             printf("in struct, ip is %d\n",rec.client_port);
                             
                             for(int i=0;i<4;i++){
-                                if(client_list[i]==0){
+                                if(client_list[i].struct_occupied==0){
                                     client_list[i] = rec;
                                 }
                             }
                             client_count++;
                         }
                         else{
-                            printf("new client login\n");
+                            printf("old client login back\n");
                             client_list[exist_index].client_port = port;
-                            client_list[i].status = 1;
+                            client_list[exist_index].status = 1;
+                            client_list[exist_index].sockfd = fdaccept;
                         }
                         if(client_count>1){
-                            sort_client_list(client_list,client_count);
+                            sort_client_list(client_list);
                         }
                         char buffer[BUFFER_SIZE];
-                        client_list_to_buf(&buffer);
+                        buf_clients(buffer);
+                        if(send(fdaccept,buffer,BUFFER_SIZE,0)==BUFFER_SIZE){
+                            printf("server send buffer to client\n");
+                        }
                         /* Add to watched socket list */
                         FD_SET(fdaccept, &server_master_list);
                         if(fdaccept > head_socket) head_socket = fdaccept;
@@ -497,14 +592,12 @@ void server_mode(int server_port){
                     //message from existing clients
                     else{
                         /* Initialize buffer to receieve response */
-                        char *buffer = (char*) malloc(sizeof(char)*BUFFER_SIZE);
-                        memset(buffer, '\0', BUFFER_SIZE);
-
+                        char *client_msg_buffer = (char*) malloc(sizeof(char)*BUFFER_SIZE);
+                        memset(client_msg_buffer, '\0', BUFFER_SIZE);
+                        char buffer[BUFFER_SIZE];
                         if(recv(sock_index, buffer, BUFFER_SIZE, 0) <= 0){
                             close(sock_index);
                             printf("Remote Host terminated connection!\n");
-
-                            
                             FD_CLR(sock_index, &server_master_list);
                         }
                         else {
@@ -517,7 +610,8 @@ void server_mode(int server_port){
 							fflush(stdout);
                         }
 
-                        free(buffer);
+                        free(client_msg_buffer);
+                        // free(buffer);
                     }
                 }
             }
@@ -629,7 +723,7 @@ int get_host_ip(char* buffer){
     int get_socket_name = getsockname(sock, (struct sockaddr*) &host_addr, &host_addr_length);
          
     const char* ip = inet_ntop(AF_INET, &host_addr.sin_addr, buffer, BUFFER_SIZE);
-    
+    strcpy(ip_for_client,buffer);
     gethostname(host_name,  BUFFER_SIZE);
     printf("Host name: %s\n", host_name);
     close(sock);     
@@ -664,9 +758,9 @@ int ip_exist(char* client_ip){
     }
     return index;
 }
-void sort_client_list(struct client_record client_list[4],int max_index){
-    for (int i=0;i<max_index-1;i++){
-        for (int j=i;j<max_index;j++){
+void sort_client_list(struct client_record client_list[4]){
+    for (int i=0;i<3;i++){
+        for (int j=i;j<4;j++){
             if(client_list[i].struct_occupied==1&&client_list[j].struct_occupied){
                 if(client_list[i].client_port>client_list[j].client_port){
                     struct client_record tmp = client_list[i];
@@ -678,11 +772,26 @@ void sort_client_list(struct client_record client_list[4],int max_index){
         }
     }
 }
-void buf_other_clients(char* buffer){
+void buf_clients(char* buffer){
+    memset(buffer, '\0',sizeof(buffer));
     for(int i=0;i<4;i++){
         if(client_list[i].struct_occupied==1&&client_list[i].status==1){
+            char port[PORT_SIZE];
+             char status[20];
+             // int to string
+             sprintf(port, "%d", client_list[i].client_port);
+             sprintf(status, "%s", "logged-in");
 
+             strcat(buffer, client_list[i].hostname);
+             strcat(buffer, " ");
+             strcat(buffer, client_list[i].ip_addr);
+             strcat(buffer, " ");
+             strcat(buffer, port);
+             strcat(buffer, " ");
+             strcat(buffer, status);
+             strcat(buffer, "");
         }
     }
-
+    strcat(buffer,'\0');
+    printf(buffer);
 }
