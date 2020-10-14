@@ -77,6 +77,7 @@ struct client_record client_list[4];
 struct client_msg{
 	char cmd[CMD_SIZE];
 	char sender_ip[IP_SIZE];
+    char receiver_ip[IP_SIZE];
 	char msg[BUFFER_SIZE];
 };
 
@@ -266,14 +267,17 @@ void client_mode(int client_port){
                             memset(&client_message, '\0', sizeof(client_message));
                             strcpy(client_message.cmd,"SEND");
                             strncpy(client_message.msg,msg_ptr,msg_length);
-                            
-                            printf("Sending '%s 'to: %s\n",client_message.msg, receiver_ip);
-                            
+                            strcpy(client_message.sender_ip,ip_for_client);
+                            strcpy(client_message.receiver_ip,receiver_ip);
+                            printf("Sending from %s '%s 'to: %s\n",client_message.sender_ip,client_message.msg, client_message.receiver_ip);
+                            if(send(serverfd_for_client,&client_message, sizeof(client_message),0)==sizeof(client_message)){
+                                printf("send done\n");
+                            }
 							// cse4589_print_and_log("[IP:END]\n");
 						}
                         else if((strcmp(client_args[0],"BROADCAST"))==0)
 						{
-							if (count != 2) {
+							if (count < 2) {
                                 printf("Msg cannot be empty\n");
                                 printf("NOT logged in\n");
                                 cse4589_print_and_log("[SEND:ERROR]\n");
@@ -290,23 +294,20 @@ void client_mode(int client_port){
                                 fflush(stdout);
                                 continue;
                             }
-							char* receiver_ip = client_args[1];
+							
                             char msg[BUFFER_SIZE];
                             int msg_start=11;
                             int msg_length=0;
-                            while(cmd_for_send[msg_start]!=' '){
-                                msg_start++;
-                            }
-                            msg_start+=1;
-                            while(cmd_for_send[msg_start]!='\0'){
+                            
+                            while(cmd_for_send[msg_start+msg_length]!='\0'){
                                 msg_length++;
                             }
                             char *msg_ptr = cmd_for_send+msg_start;
                             memset(&client_message, '\0', sizeof(client_message));
                             strcpy(client_message.cmd,"BROADCAST");
                             strncpy(client_message.msg,msg_ptr,msg_length);
-                            
-                            printf("Sending '%s'to: %s\n",client_message.msg[msg_length], receiver_ip);
+                            strcpy(client_message.sender_ip,ip_for_client);
+                            printf("Broad casting '%s'from %s\n",client_message.msg,client_message.sender_ip);
                             
 							// cse4589_print_and_log("[IP:END]\n");
 						}
@@ -422,6 +423,7 @@ void server_mode(int server_port){
 	//fill socket address required information
 	bzero(&server_addr, sizeof(server_addr));
     for(int i=0;i<4;i++){
+        // memset(client_list[i],'\0',sizeof(struct client_record ));
         client_list[i].struct_occupied=0;
     }
     printf("size for all clients is %d\n",sizeof(client_list));
@@ -500,15 +502,18 @@ void server_mode(int server_port){
 						{
 							int print_index=1;
                             for(int i=0;i<4;i++){
-                                char login[20];
+                                if(client_list[i].struct_occupied==1){
+                                    char login[20];
                                 if(client_list[i].status==1){
                                     strcpy(login,"logged-in");
                                 }
                                 else{
                                     strcpy(login,"logged-out");
                                 }
-                                printf("%-5d%-35s%-8d%-8d%-8s\n", print_index++, client_list[i].hostname, client_list[i].msg_sent, client_list[i].msg_received, login);
+                                // printf("%-5d%-35s%-8d%-8d%-8s\n", print_index, client_list[i].hostname, client_list[i].msg_sent, client_list[i].msg_received, login);
                                 cse4589_print_and_log("%-5d%-35s%-8d%-8d%-8s\n", print_index++, client_list[i].hostname, client_list[i].msg_sent, client_list[i].msg_received, login);
+                                }
+                                
                             }
 						}
 						free(cmd);
@@ -565,8 +570,11 @@ void server_mode(int server_port){
                             printf("in struct, ip is %d\n",rec.client_port);
                             
                             for(int i=0;i<4;i++){
-                                if(client_list[i].struct_occupied==0){
-                                    client_list[i] = rec;
+                                if(client_list[i].struct_occupied!=1){
+                                    printf("find slot\n");
+                                    memcpy(&client_list[i],&rec,sizeof(struct client_record));
+                                    printf("client record ip %d\n",client_list[i].ip_addr);
+                                    break;
                                 }
                             }
                             client_count++;
@@ -577,9 +585,11 @@ void server_mode(int server_port){
                             client_list[exist_index].status = 1;
                             client_list[exist_index].sockfd = fdaccept;
                         }
+                        printf("goint to sort\n");
                         if(client_count>1){
                             sort_client_list(client_list);
                         }
+                        printf("response back\n");
                         char buffer[BUFFER_SIZE];
                         buf_clients(buffer);
                         if(send(fdaccept,buffer,BUFFER_SIZE,0)==BUFFER_SIZE){
@@ -592,21 +602,33 @@ void server_mode(int server_port){
                     //message from existing clients
                     else{
                         /* Initialize buffer to receieve response */
-                        char *client_msg_buffer = (char*) malloc(sizeof(char)*BUFFER_SIZE);
+                        char *client_msg_buffer = (char*) malloc(sizeof(struct client_msg));
                         memset(client_msg_buffer, '\0', BUFFER_SIZE);
                         char buffer[BUFFER_SIZE];
-                        if(recv(sock_index, buffer, BUFFER_SIZE, 0) <= 0){
+                        if(recv(sock_index, client_msg_buffer, sizeof(struct client_msg), 0) <= 0){
                             close(sock_index);
                             printf("Remote Host terminated connection!\n");
                             FD_CLR(sock_index, &server_master_list);
                         }
                         else {
+                            printf("msg received");
                         	//Process incoming data from existing clients here ...
-
-                        	printf("\nClient sent me: %s\n", buffer);
+                            char cmd[CMD_SIZE];
+                            char sender_ip[IP_SIZE];
+                            char receiver_ip[IP_SIZE];
+                            char client_message[BUFFER_SIZE];
+                            memcpy(cmd,client_msg_buffer,CMD_SIZE);
+                            memcpy(sender_ip,client_msg_buffer+CMD_SIZE,IP_SIZE);
+                            memcpy(receiver_ip,client_msg_buffer+CMD_SIZE+IP_SIZE,IP_SIZE);
+                            memcpy(client_message,client_msg_buffer+CMD_SIZE+IP_SIZE*2,BUFFER_SIZE);
+                            printf("sender ip is %s\n",sender_ip);
+                            printf("sender cmd is %s\n",cmd);
+                            printf("receiver ip is %s\n",receiver_ip);
+                            printf("sender msg is %s\n",client_message);
+                        	
 							printf("ECHOing it back to the remote host ... ");
-							if(send(fdaccept, buffer, strlen(buffer), 0) == strlen(buffer))
-								printf("Done!\n");
+							// if(send(fdaccept, buffer, strlen(buffer), 0) == strlen(buffer))
+							// 	printf("Done!\n");
 							fflush(stdout);
                         }
 
@@ -776,22 +798,30 @@ void buf_clients(char* buffer){
     memset(buffer, '\0',sizeof(buffer));
     for(int i=0;i<4;i++){
         if(client_list[i].struct_occupied==1&&client_list[i].status==1){
-            char port[PORT_SIZE];
-             char status[20];
+            printf("find a logged-in one\n");
+            char status[20];
+            int port = client_list[i].client_port;
+            printf("client host name %s\n",client_list[i].hostname);
+            printf("client ip %s\n",client_list[i].ip_addr);
+            printf("client port %d\n",port);
+            strcpy(status,"logged-in");
+            
+             
              // int to string
-             sprintf(port, "%d", client_list[i].client_port);
-             sprintf(status, "%s", "logged-in");
+            //  sprintf(port, "%d", client_list[i].client_port);
+            //  sprintf(status, "%s", "logged-in");
 
-             strcat(buffer, client_list[i].hostname);
-             strcat(buffer, " ");
-             strcat(buffer, client_list[i].ip_addr);
-             strcat(buffer, " ");
-             strcat(buffer, port);
-             strcat(buffer, " ");
-             strcat(buffer, status);
-             strcat(buffer, "");
+            //  strcat(buffer, client_list[i].hostname);
+            //  strcat(buffer, " ");
+            //  strcat(buffer, client_list[i].ip_addr);
+            //  strcat(buffer, " ");
+            //  strcat(buffer, port);
+            //  strcat(buffer, " ");
+            //  strcat(buffer, status);
+            //  strcat(buffer, "");
         }
     }
-    strcat(buffer,'\0');
-    printf(buffer);
+    // strcat(buffer,"\n");
+    // strcat(buffer,'\0');
+    // printf(buffer);
 }
