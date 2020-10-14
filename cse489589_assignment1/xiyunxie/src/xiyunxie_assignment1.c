@@ -94,6 +94,7 @@ int ip_exist(char* client_ip);
 void sort_client_list(struct client_record client_list[4]);
 void client_list_to_buf(struct client_record client_list[4],char* buffer,int max_index);
 void buf_clients(char* buffer);
+int validate_number(char *str);
 /**
  * main function
  *
@@ -844,10 +845,41 @@ int get_host_ip(char* buffer){
     else
         return 0;
 }
+int validate_number(char *str) {
+    //used code in https://www.tutorialspoint.com/c-program-to-validate-an-ip-address
+   while (*str) {
+      if(!isdigit(*str)){ 
+         return 0;
+      }
+      str++; 
+   }
+   return 1;
+}
 int valid_ip(char* ip_address){
-    //used code in https://stackoverflow.com/questions/791982/determine-if-a-string-is-a-valid-ipv4-address-in-c
-    struct sockaddr_in sa;
-	return inet_pton(AF_INET, ip_address, &sa.sin_addr);
+    //used code in https://www.tutorialspoint.com/c-program-to-validate-an-ip-address
+    
+    int i, num, dots = 0;
+   char *ptr;
+   if (ip_address == NULL)
+      return 0;
+    ptr = strtok(ip_address, ".");
+    if (ptr == NULL)
+        return 0;
+   while (ptr) {
+        if (!validate_number(ptr)) 
+            return 0;
+        num = atoi(ptr); 
+        if (num >= 0 && num <= 255) {
+            ptr = strtok(NULL, "."); 
+            if (ptr != NULL)
+                dots++; 
+        } 
+        else
+            return 0;
+    }
+    if (dots != 3) 
+       return 0;
+    return 1;
 	
 }
 int valid_port(char* port){
