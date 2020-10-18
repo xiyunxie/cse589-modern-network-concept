@@ -118,6 +118,10 @@ void sort_block_list_of_server(char* sender_ip);
 void buf_clients(char* buffer);
 int validate_number(char *str);
 int blocked_by_sender(char* blocker_ip,char* blocked_ip);
+void print_client_list(char* client_ip);
+void print_buffer_msgs(char* client_ip);
+void print_block_lists(char* client_ip);
+int get_receiver_fd(char* client_ip);
 /**
  * main function
  *
@@ -157,6 +161,7 @@ void client_mode(int client_port){
             /* Loop through socket descriptors to check which ones are ready */
             for(sock_index=0; sock_index<=head_socket; sock_index+=1){
                 if(FD_ISSET(sock_index, &client_watch_list)){
+                    printf("sock index is %d\n",sock_index);
                     //new command from STDIN
                     if (sock_index == STDIN){
                     	char *cmd = (char*) malloc(sizeof(char)*CMD_SIZE);
@@ -296,21 +301,24 @@ void client_mode(int client_port){
                                 serverfd_for_client = connect_to_server(server_ip,server_port,c_port);
                                 printf("Connecting to server IP: %s with port %d\n",server_ip,server_port);
                                 FD_SET(serverfd_for_client, &client_master_list);
-                                client_logged_in = 1;
+                                if(serverfd_for_client>head_socket) head_socket=serverfd_for_client;
                                 char update[sizeof(struct client_record)*4];
                                 //recv other user info
-                                recv(serverfd_for_client, update, sizeof(struct client_record)*4, 0);
-                                memcpy(client_list,update,sizeof(struct client_record)*4); 
-                                int print_index=1;
-                                for(int i=0;i<4;i++){
-                                    if(client_list[i].struct_occupied==1&&client_list[i].status==1){
-                                        char login[20];
-                                        strcpy(login,"logged-in");
-                                    printf("%-5d%-35s%-20s%-8d\n", print_index, client_list[i].hostname, client_list[i].ip_addr, client_list[i].client_port);
-                                    // cse4589_print_and_log("%-5d%-35s%-8d%-8d%-8s\n", print_index++, client_list[i].hostname, client_list[i].msg_sent, client_list[i].msg_received, login);
+                                if(recv(serverfd_for_client, update, sizeof(struct client_record)*4, 0)==sizeof(update)){
+                                    memcpy(client_list,update,sizeof(struct client_record)*4); 
+                                    int print_index=1;
+                                    for(int i=0;i<4;i++){
+                                        if(client_list[i].struct_occupied==1&&client_list[i].status==1){
+                                            char login[20];
+                                            strcpy(login,"logged-in");
+                                        printf("%-5d%-35s%-20s%-8d\n", print_index, client_list[i].hostname, client_list[i].ip_addr, client_list[i].client_port);
+                                        // cse4589_print_and_log("%-5d%-35s%-8d%-8d%-8s\n", print_index++, client_list[i].hostname, client_list[i].msg_sent, client_list[i].msg_received, login);
+                                        }
                                     }
+                                    client_logged_in = 1;
+                                    client_first_login=0;
                                 }
-                                client_first_login=0;
+                                
                             }
                             // printf(update);
                             cse4589_print_and_log("[LOGIN:SUCCESS]\n");
@@ -344,26 +352,34 @@ void client_mode(int client_port){
                                 fflush(stdout);
                                 continue;
                             }
+                            printf("requesting refresh\n");
                             memset(&client_message, '\0', sizeof(client_message));
                             strcpy(client_message.cmd,"REFRESH");
+                            strcpy(client_message.sender_ip,ip_for_client);
                             //send refresh request
-							send(serverfd_for_client, &client_message, sizeof(client_message), 0);
-                            char update[sizeof(struct client_record)*4];
-                            recv(serverfd_for_client, update, sizeof(struct client_record)*4, 0);
-                            memcpy(client_list,update,sizeof(struct client_record)*4); 
-                            int print_index=1;
-                            for(int i=0;i<4;i++){
-                                if(client_list[i].struct_occupied==1&&client_list[i].status==1){
-                                    char login[20];
-                                    strcpy(login,"logged-in");
-                                printf("%-5d%-35s%-20s%-8d\n", print_index, client_list[i].hostname, client_list[i].ip_addr, client_list[i].client_port);
-                                // cse4589_print_and_log("%-5d%-35s%-8d%-8d%-8s\n", print_index++, client_list[i].hostname, client_list[i].msg_sent, client_list[i].msg_received, login);
+							if(send(serverfd_for_client, &client_message, sizeof(client_message), 0)==sizeof(client_message)){
+                                printf("refresh request send\n");
+                                char update[sizeof(struct client_record)*4];
+                                if(recv(serverfd_for_client, update, sizeof(struct client_record)*4, 0)==sizeof(update)){
+                                    printf("refresh respond received\n");
+                                    memcpy(client_list,update,sizeof(struct client_record)*4); 
+                                    int print_index=1;
+                                    for(int i=0;i<4;i++){
+                                        if(client_list[i].struct_occupied==1&&client_list[i].status==1){
+                                            char login[20];
+                                            strcpy(login,"logged-in");
+                                        printf("%-5d%-35s%-20s%-8d\n", print_index, client_list[i].hostname, client_list[i].ip_addr, client_list[i].client_port);
+                                        // cse4589_print_and_log("%-5d%-35s%-8d%-8d%-8s\n", print_index++, client_list[i].hostname, client_list[i].msg_sent, client_list[i].msg_received, login);
+                                        }
+                                    }
+                                    cse4589_print_and_log("[REFRESH:SUCCESS]\n");
+                                    fflush(stdout);
+                                    cse4589_print_and_log("[REFRESH:END]\n");
+                                    fflush(stdout);
                                 }
+                                
                             }
-                            cse4589_print_and_log("[REFRESH:SUCCESS]\n");
-                            fflush(stdout);
-                            cse4589_print_and_log("[REFRESH:END]\n");
-                            fflush(stdout);
+                            
 							// cse4589_print_and_log("[IP:END]\n");
 						}
                         else if((strcmp(client_args[0],"SEND"))==0)
@@ -571,17 +587,20 @@ void client_mode(int client_port){
                         else if((strcmp(client_args[0],"EXIT"))==0)
 						{
 							
-                            if(client_logged_in==0){
-                                printf("NOT logged in\n");
-                                cse4589_print_and_log("[EXIT:ERROR]\n");
-                                fflush(stdout);
-                                cse4589_print_and_log("[EXIT:END]\n");
-                                fflush(stdout);
-                                continue;
+                            // if(client_logged_in==0){
+                            //     printf("NOT logged in\n");
+                            //     cse4589_print_and_log("[EXIT:ERROR]\n");
+                            //     fflush(stdout);
+                            //     cse4589_print_and_log("[EXIT:END]\n");
+                            //     fflush(stdout);
+                            //     continue;
+                            // }
+                            if(client_logged_in==1){
+                                memset(&client_message, '\0', sizeof(client_message));
+                                strcpy(client_message.cmd,"EXIT");
+                                strcpy(client_message.sender_ip,ip_for_client);
                             }
-                            memset(&client_message, '\0', sizeof(client_message));
-                            strcpy(client_message.cmd,"EXIT");
-                            strcpy(client_message.sender_ip,ip_for_client);
+                            
                             printf("Exiting\n");
                             
                             cse4589_print_and_log("[EXIT:SUCCESS]\n");
@@ -596,6 +615,7 @@ void client_mode(int client_port){
                     //else server send a message to
                     
                     else{
+                        printf("server message come in\n");
                         /* Initialize buffer to receieve response */
                         // char *buffer = (char*) malloc(sizeof(char)*BUFFER_SIZE);
                         memset(&server_respond_message, '\0', sizeof(server_respond_message));
@@ -641,7 +661,7 @@ void server_mode(int server_port){
 	//fill socket address required information
 	bzero(&server_addr, sizeof(server_addr));
     for(int i=0;i<4;i++){
-        // memset(client_list[i],'\0',sizeof(struct client_record ));
+        memset(&client_list[i],'\0',sizeof(struct client_record ));
         client_list[i].struct_occupied=0;
     }
     memset(block_list_for_server, '\0', sizeof(block_list_for_server)*4);
@@ -649,7 +669,8 @@ void server_mode(int server_port){
         // memset(client_list[i],'\0',sizeof(struct client_record ));
         block_list_for_server[i].block_occupied=0;
     }
-    printf("size for all clients is %d\n",sizeof(client_list));
+    memset(server_msg_buffers,'\0',sizeof(server_msg_buffers));
+    // printf("size for all clients is %d\n",sizeof(client_list));
     server_addr.sin_family = AF_INET;
     server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
     server_addr.sin_port = htons(server_port);
@@ -677,7 +698,7 @@ void server_mode(int server_port){
     head_socket = server_socket;
     struct server_respond_msg server_respond_message;
     while(TRUE){
-        printf("start while\n");
+        // printf("start while\n");
         memcpy(&server_watch_list, &server_master_list, sizeof(server_master_list));
 		//fflush(stdout);
 
@@ -685,14 +706,14 @@ void server_mode(int server_port){
         selret = select(head_socket + 1, &server_watch_list, NULL, NULL, NULL);
         if(selret < 0)
             perror("select failed.");
-        printf("can select %d\n",selret);
+        // printf("can select %d\n",selret);
         /* Check if we have sockets/STDIN to process */
         if(selret > 0){
             /* Loop through socket descriptors to check which ones are ready */
             for(sock_index=0; sock_index<=head_socket; sock_index+=1){
-
+                // printf("sock index is %d\n",sock_index);
                 if(FD_ISSET(sock_index, &server_watch_list)){
-                    printf("sock index %d\n",sock_index);
+                    printf("sock index %d is in set\n",sock_index);
                     //new command from STDIN
                     if (sock_index == STDIN){
                     	char *cmd = (char*) malloc(sizeof(char)*CMD_SIZE);
@@ -816,15 +837,13 @@ void server_mode(int server_port){
                         printf("new client accepted\n");
                         if(fdaccept < 0)
                             perror("Accept failed.");
-                        printf("port is %d\n",client_addr.sin_port);
-						char client_ip[BUFFER_SIZE];
+                        char client_ip[BUFFER_SIZE];
                         // int client_port; 
 	                    inet_ntop(AF_INET,&client_addr.sin_addr.s_addr,client_ip, BUFFER_SIZE);
                         // fflush(stdout);
                        
                        
                         char client_port[PORT_SIZE];
-                        printf("malloc ok\n");
                         memset(client_port, '\0', PORT_SIZE);
                         printf("memset done\n");
                         // fflush(stdout);
@@ -841,53 +860,56 @@ void server_mode(int server_port){
                         
                         printf("Client %s of IP %s with port %d connected!\n",hostname,client_ip,port);     
                         fflush(stdout);
+                        struct client_record rec = {.id=client_count+1};
+                        memset(&rec,'\0',sizeof(rec));
+                        strcpy(rec.ip_addr,client_ip);
+                        printf("ip in record is %s\n",rec.ip_addr);
                         int exist_index = ip_exist(client_ip);
-                        if(exist_index==-1){
+                        
                             //new client
-                            printf("new client login\n");
-                            struct client_record rec = {.id=client_count+1};
-                            printf("in struct, id is %d\n",rec.id);
-                            strcpy(rec.ip_addr,client_ip);
-                            strcpy(rec.hostname , hostname);
-                            
-                            rec.client_port = port;
-                            rec.msg_sent = 0;
-                            rec.msg_received = 0;
-                            rec.status=1;
-                            rec.struct_occupied=1;
-                            rec.sockfd = fdaccept;
-                            //find a slot to init record of new client 
-                            for(int i=0;i<4;i++){
-                                if(client_list[i].struct_occupied!=1){
-                                    printf("find slot\n");
-                                    memcpy(&client_list[i],&rec,sizeof(struct client_record));
-                                    printf("client record ip %d\n",client_list[i].ip_addr);
-                                    break;
-                                }
+                        printf("new client login\n");
+                        
+                        strcpy(rec.hostname , hostname);
+                        
+                        rec.client_port = port;
+                        rec.msg_sent = 0;
+                        rec.msg_received = 0;
+                        rec.status=1;
+                        rec.struct_occupied=1;
+                        rec.sockfd = fdaccept;
+                        //find a slot to init record of new client 
+                        for(int i=0;i<4;i++){
+                            if(client_list[i].struct_occupied!=1){
+                                printf("find %d-th position\n",i);
+                                memcpy(&client_list[i],&rec,sizeof(struct client_record));
+                                printf("client record ip %s\n",client_list[i].ip_addr);
+                                printf("client record fd %d\n",client_list[i].sockfd);
+                                break;
                             }
-                            //init block list in block_list_for_server
-                            for(int i=0;i<4;i++){
-                                if(block_list_for_server[i].block_occupied!=1){
-                                    printf("find slot of block list\n");
-                                    block_list_for_server[i].block_occupied=1;
-                                    memcpy(&block_list_for_server[i].blocker,&rec,sizeof(struct client_record));
-                                    printf("host name in block list %s init done\n",block_list_for_server[i].blocker.hostname);
-                                    break;
-                                }
-                            }
-                            //init message buffer for new client
-                            for(int i=0;i<4;i++){
-                                if(server_msg_buffers[i].buffer_occupied!=1){
-                                    printf("find slot of buffer list\n");
-                                    server_msg_buffers[i].buffer_occupied=1;
-                                    server_msg_buffers[i].sockfd = fdaccept;
-                                    strcpy(server_msg_buffers[i].receiverIP,rec.ip_addr);
-                                    printf("server msg buffer ip %s\n",server_msg_buffers[i].receiverIP);
-                                    break;
-                                }
-                            }
-                            client_count++;
                         }
+                        //init block list in block_list_for_server
+                        for(int i=0;i<4;i++){
+                            if(block_list_for_server[i].block_occupied!=1){
+                                printf("find slot of block list\n");
+                                block_list_for_server[i].block_occupied=1;
+                                memcpy(&block_list_for_server[i].blocker,&rec,sizeof(struct client_record));
+                                printf("host name in block list %s init done\n",block_list_for_server[i].blocker.hostname);
+                                break;
+                            }
+                        }
+                        //init message buffer for new client
+                        for(int i=0;i<4;i++){
+                            if(server_msg_buffers[i].buffer_occupied!=1){
+                                printf("find slot of buffer list\n");
+                                server_msg_buffers[i].buffer_occupied=1;
+                                server_msg_buffers[i].sockfd = fdaccept;
+                                strcpy(server_msg_buffers[i].receiverIP,rec.ip_addr);
+                                printf("server msg buffer ip %s\n",server_msg_buffers[i].receiverIP);
+                                break;
+                            }
+                        }
+                        client_count++;
+                        
                         
                         // if(strcmp(client_list[i].ip_addr,sender_ip)==0){
                         //     //increase sender's sending count
@@ -897,6 +919,7 @@ void server_mode(int server_port){
                         printf("goint to sort\n");
                         if(client_count>1){
                             sort_client_list(client_list);
+                            print_client_list(rec.ip_addr);
                         }
                         // char buffer[BUFFER_SIZE];
                         
@@ -911,6 +934,7 @@ void server_mode(int server_port){
                     //message from existing clients
                     else{
                         /* Initialize buffer to receieve response */
+                        printf("new operation received\n");
                         char *client_msg_buffer = (char*) malloc(sizeof(struct client_msg));
                         memset(client_msg_buffer, '\0', BUFFER_SIZE);
                         // char buffer[BUFFER_SIZE];
@@ -937,12 +961,20 @@ void server_mode(int server_port){
                             printf("sender cmd is %s\n",cmd);
                             printf("receiver ip is %s\n",receiver_ip);
                             printf("sender msg is %s\n",client_message);
+                            
                             if(strcmp(cmd,"LOGIN")==0){
+                                fdaccept = get_receiver_fd(sender_ip);
                                 printf("old client login back\n");
                                 int exist_index = ip_exist(client_ip);
-                                client_list[exist_index].client_port = port;
-                                client_list[exist_index].status = 1;
-                                client_list[exist_index].sockfd = fdaccept;
+                                if(client_list[exist_index].status == 1){
+                                    continue;
+                                }
+                                else{
+                                    client_list[exist_index].status = 1;
+                                }
+                                // client_list[exist_index].client_port = port;
+                                
+                                // client_list[exist_index].sockfd = fdaccept;
                                 //send buffered message
                             
                                 //find login client
@@ -954,16 +986,17 @@ void server_mode(int server_port){
                                         sprintf(buffer_msg_size,"%d",server_msg_buffers[j].buffered_message_size);
                                         // itoa(server_msg_buffers[j].buffered_message_size,buffer_msg_size,sizeof(int));
                                         strcpy(server_respond_message.msg,buffer_msg_size);
+                                        printf("client %s has %s messages buffered\0",client_ip,server_respond_message.msg);
                                         if(send(fdaccept,&server_respond_message,sizeof(server_respond_message),0)==sizeof(server_respond_message)){
-                                            for (int i=0;i<server_msg_buffers[j].buffered_message_size;i--){
-                                                //send
+                                            for (int i=0;i<server_msg_buffers[j].buffered_message_size;i++){
+                                                //send buffered messages
                                                 memset(&server_respond_message,'\0',sizeof(server_respond_message));
                                                 server_respond_message.success=1;
                                                 strcpy(server_respond_message.msg,server_msg_buffers[j].msgs[i]);
                                                 strcpy(server_respond_message.sender_ip,server_msg_buffers[j].senders[i]);
                                                 
                                                 if(send(fdaccept,&server_respond_message,sizeof(server_respond_message),0)==sizeof(server_respond_message)){
-                                                    printf("sending %s from %s to %s\n",server_respond_message.msg,server_respond_message.sender_ip,server_msg_buffers[j].receiverIP);
+                                                    printf("sending %s from %s to %s\n",server_respond_message.msg,server_respond_message.sender_ip,client_ip);
                                                     fflush(stdout);
                                                 }
                                             }
@@ -981,6 +1014,7 @@ void server_mode(int server_port){
                                 
                             }
                         	else if(strcmp(cmd,"SEND")==0){
+                                fdaccept = get_receiver_fd(receiver_ip);
                                 int is_blocked_by_sender=blocked_by_sender(sender_ip,receiver_ip);
                                 if(is_blocked_by_sender==0){
                                     //send
@@ -988,6 +1022,15 @@ void server_mode(int server_port){
                                         if(strcmp(client_list[i].ip_addr,receiver_ip)==0){
                                             if(client_list[i].status==1){
                                                 //send directly
+                                                memset(&server_respond_message,'\0',sizeof(server_respond_message));
+                                                server_respond_message.success=1;
+                                                strcpy(server_respond_message.sender_ip,sender_ip);
+                                                strcpy(server_respond_message.msg,client_message);
+                                                strcpy(server_respond_message.receiver_ip,receiver_ip);
+                                                if(send(fdaccept,&server_respond_message,sizeof(server_respond_message),0)==sizeof(server_respond_message)){
+                                                    printf("server send %s from %s to %s\n",server_respond_message.msg,server_respond_message.sender_ip,server_respond_message.receiver_ip);
+                                                    fflush(stdout);
+                                                }
                                             }
                                             else{
                                                 //buffer it
@@ -1027,6 +1070,16 @@ void server_mode(int server_port){
                                             //need to check if this ip is logged out
                                             if(client_list[i].status==1){
                                                 //send directly
+                                                memset(&server_respond_message,'\0',sizeof(server_respond_message));
+                                                server_respond_message.success=1;
+                                                strcpy(server_respond_message.sender_ip,sender_ip);
+                                                strcpy(server_respond_message.msg,client_message);
+                                                strcpy(server_respond_message.receiver_ip,client_list[i].ip_addr);
+                                                fdaccept = get_receiver_fd(server_respond_message.receiver_ip);
+                                                if(send(fdaccept,&server_respond_message,sizeof(server_respond_message),0)==sizeof(server_respond_message)){
+                                                    printf("server send %s from %s to %s\n",server_respond_message.msg,server_respond_message.sender_ip,server_respond_message.receiver_ip);
+                                                    fflush(stdout);
+                                                }
                                             }
                                             else{
                                                 //buffer the message
@@ -1049,12 +1102,19 @@ void server_mode(int server_port){
                                 }
                             }
                             else if(strcmp(cmd,"REFRESH")==0){
-                                if(send(fdaccept,&client_list,sizeof(struct client_record)*4,0)==sizeof(struct client_record)*4){
-                                    printf("server send buffer to client\n");
-                                    fflush(stdout);
+                                fdaccept = get_receiver_fd(sender_ip);
+                                printf("server receive refresh\n");
+                                printf("to socket %d\n",fdaccept);
+                                if(fdaccept>0){
+                                    if(send(fdaccept,&client_list,sizeof(client_list),0)==sizeof(client_list)){
+                                        printf("server send buffer to client\n");
+                                        fflush(stdout);
+                                    }
                                 }
+                                
                             }
                             else if(strcmp(cmd,"BLOCK")==0){
+                                fdaccept = get_receiver_fd(sender_ip);
                                 char* block_ip;
                                 strcpy(block_ip,client_message);
                                 int is_blocked_by_sender=0;
@@ -1075,12 +1135,13 @@ void server_mode(int server_port){
                                             //block it
                                             for(int k=0;k<4;k++){
                                                 if(client_list[k].struct_occupied==1&&strcmp(client_list[k].ip_addr,block_ip)==0){
-                                                    //find the client in client_list that will be blocked
+                                                    //find the client in client_list that will be blocked and copy it to block list
                                                     memcpy(&block_list_for_server[j].blocked[first_empty_slot],&client_list[k],sizeof(struct client_record));
                                                 }
                                                 break;
                                             }
                                         }
+                                        printf("set response message\n");
                                         memset(&server_respond_message,'\0',sizeof(server_respond_message));
                                         if(is_blocked_by_sender==1){
                                         //send back ack to sender, already block
@@ -1099,8 +1160,12 @@ void server_mode(int server_port){
                                     }
                                     
                                 }
+                                printf("printing block list for %s:\n");
+                                print_block_lists(sender_ip);
+                                printf("print block list done\n");
                             }
                             else if(strcmp(cmd,"UNBLOCK")==0){
+                                fdaccept = get_receiver_fd(sender_ip);
                                 char* unblock_ip;
                                 strcpy(unblock_ip,client_message);
                                 int is_blocked_by_sender=0;
@@ -1122,7 +1187,7 @@ void server_mode(int server_port){
                                         }
                                         memset(&server_respond_message,'\0',sizeof(server_respond_message));
                                         if(is_blocked_by_sender==0){
-                                        //send back ack to sender, already unblocked
+                                        //send back ack to sender, target client not blocked
                                             server_respond_message.success=0;
                                         }
                                         else{
@@ -1137,10 +1202,13 @@ void server_mode(int server_port){
                                     }
                                     
                                 }
+                                printf("printing block list for %s:\n");
+                                print_block_lists(sender_ip);
+                                printf("print block list done\n");
                             }
                             else if(strcmp(cmd,"LOGOUT")==0){
                                 for(int i=0;i<4;i++){
-                                    if(strcmp(client_list[i].ip_addr,sender_ip)==0){
+                                    if(client_list[i].struct_occupied==1 && strcmp(client_list[i].ip_addr,sender_ip)==0){
                                         printf("find sender\n");
                                         client_list[i].status=0;
                                         printf("client record ip %d logged out\n",client_list[i].ip_addr);
@@ -1151,7 +1219,7 @@ void server_mode(int server_port){
                             else if(strcmp(cmd,"EXIT")==0){
                                 close(sock_index);
                                 printf("Remote Host terminated connection!\n");
-
+                                //delete client in client_list
                                 for(int i=0;i<4;i++){
                                     if(strcmp(client_list[i].ip_addr,sender_ip)==0){
                                         printf("find exciting client\n");
@@ -1161,16 +1229,16 @@ void server_mode(int server_port){
                                         break;
                                     }
                                 }
+                                //delete client in any other clients' block list
                                 for(int i=0;i<4;i++){
-                                    if(strcmp(block_list_for_server[i].blocker.ip_addr,sender_ip)==0){
+                                    if(block_list_for_server[i].block_occupied==1&&strcmp(block_list_for_server[i].blocker.ip_addr,sender_ip)==0){
                                         printf("find exiting client in block list\n");
                                         
                                         memset(&block_list_for_server[i],'\0',sizeof(struct block_list));
                                         printf("client's block list removed\n");
                                         block_list_for_server[i].block_occupied=0;
-                                        printf("%s exited\n",block_list_for_server[i].blocker.hostname);
                                     }
-                                    else{
+                                    else if(block_list_for_server[i].block_occupied==1){//check if exiting client is in other client's block list
                                         for(int j=0;j<3;j++){
                                             if(strcmp(block_list_for_server[i].blocked[j].ip_addr,sender_ip)==0){
                                                 memset(&block_list_for_server[i].blocked[j],'\0',sizeof(struct client_record));
@@ -1189,7 +1257,7 @@ void server_mode(int server_port){
                                 } 
                                 FD_CLR(sock_index, &server_master_list);
                             }
-							printf("ECHOing it back to the remote host ... \n");
+							printf(" client request done \n");
 							// if(send(fdaccept, buffer, strlen(buffer), 0) == strlen(buffer))
 							// 	printf("Done!\n");
 							fflush(stdout);
@@ -1434,4 +1502,52 @@ void sort_block_list_of_server(char* sender_ip){
         
     }
     
+}
+void print_client_list(char* client_ip){
+    int print_index=0;
+    for(int i=0;i<4;i++){
+        if(client_list[i].struct_occupied==1&&strcmp(client_ip,client_list[i].ip_addr)==0){
+            printf("%-5d%-35s%-20s%-8d\n", print_index++, client_list[i].hostname, client_list[i].ip_addr, client_list[i].client_port);
+            
+        }
+    }
+                            
+}
+void print_buffer_msgs(char* client_ip){
+    
+    //print all bufferd messages for a client
+    for(int i=0;i<4;i++){
+        if(server_msg_buffers[i].buffer_occupied==1&&strcmp(client_ip,server_msg_buffers[i].receiverIP)==0){
+            printf("find buffer list\n");
+            for(int j=0;j<server_msg_buffers[i].buffered_message_size;j++){
+                printf("msg from:%s, to:%s\n[msg]:%s\n", server_msg_buffers[i].senders[j], server_msg_buffers[i].receiverIP, server_msg_buffers[i].msgs[j]);
+            }
+        }
+    }
+}
+void print_block_lists(char* client_ip){
+    
+    //print block list 
+    for(int i=0;i<4;i++){
+        if(block_list_for_server[i].block_occupied==1&&strcmp(client_ip,block_list_for_server[i].blocker.ip_addr)==0){
+            for(int j=0;j<3;j++){
+                if(client_ip,block_list_for_server[i].blocked[j].struct_occupied==1){
+                    printf("%s is blocking %s\n",block_list_for_server[i].blocker, block_list_for_server[i].blocked[j].ip_addr);
+                }
+            }
+
+        }
+    }
+                            
+}
+int get_receiver_fd(char* client_ip){
+    printf("get receiver fd checks ip %s\n",client_ip);
+    for(int i=0;i<4;i++){
+        printf("list occupied %d, ip is client_list[i].ip_addr",client_list[i].struct_occupied,client_list[i].ip_addr);
+        if(client_list[i].struct_occupied==1 && strcmp(client_list[i].ip_addr,client_ip)==0){
+            return client_list[i].sockfd;
+        }
+    }
+    printf("cannot find a socket\n");
+    return -1;
 }
