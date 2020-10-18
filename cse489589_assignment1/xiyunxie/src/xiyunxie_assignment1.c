@@ -238,14 +238,18 @@ void client_mode(int client_port){
                                 continue;
                             }
 							char* server_ip = client_args[1];
-                            
-                            printf("ip valid result: %d\n",valid_ip(server_ip));
-                            printf("port valid result: %d\n",valid_port(client_args[2]));
-                            if(valid_ip( server_ip)==0||valid_port(client_args[2])==0){
+                            printf("server IP %s\n",server_ip);
+                            int ip_v = valid_ip(server_ip);
+                            printf("server IP %s\n",server_ip);
+                            int port_v = valid_port(client_args[2]);
+                            printf("ip valid result: %d\n",ip_v);
+                            printf("port valid result: %d\n",port_v);
+                            if(ip_v==0||port_v==0){
                                 cse4589_print_and_log("[LOGIN:ERROR]\n");
                                 cse4589_print_and_log("[LOGIN:END]\n");
                                 continue;
                             }
+                            printf("ip and port checked\n");
                             if(client_first_login==0){
                                 //has logged in before
                                 memset(&client_message, '\0', sizeof(client_message));
@@ -287,6 +291,7 @@ void client_mode(int client_port){
                             else{
                                 printf("client login first time\n");
                                 int server_port = atoi(client_args[2]);
+                                // printf("server IP %s\n",server_ip);
                                 //connect to server
                                 serverfd_for_client = connect_to_server(server_ip,server_port,c_port);
                                 printf("Connecting to server IP: %s with port %d\n",server_ip,server_port);
@@ -614,7 +619,9 @@ void client_mode(int client_port){
     }
 }
 void server_mode(int server_port){
+    printf("port is %d\n",server_port);
     listen_port = server_port;
+    printf("listen port %d\n",listen_port);
     //running server
     int client_count = 0;
 	printf("Server on\n");
@@ -646,11 +653,11 @@ void server_mode(int server_port){
     server_addr.sin_family = AF_INET;
     server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
     server_addr.sin_port = htons(server_port);
-    printf("trying to bind socket\n");
+    printf("trying to bind socket with port %d\n",server_port);
     //server socket bind with address
     if(bind(server_socket, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0 )
     	perror("Server bind failed");
-
+    printf("server socket is %d\n",server_socket);
     //server start listening
     if(listen(server_socket, BACKLOG) < 0)
     	perror("Unable to listen on port");
@@ -670,6 +677,7 @@ void server_mode(int server_port){
     head_socket = server_socket;
     struct server_respond_msg server_respond_message;
     while(TRUE){
+        printf("start while\n");
         memcpy(&server_watch_list, &server_master_list, sizeof(server_master_list));
 		//fflush(stdout);
 
@@ -677,14 +685,14 @@ void server_mode(int server_port){
         selret = select(head_socket + 1, &server_watch_list, NULL, NULL, NULL);
         if(selret < 0)
             perror("select failed.");
-
+        printf("can select %d\n",selret);
         /* Check if we have sockets/STDIN to process */
         if(selret > 0){
             /* Loop through socket descriptors to check which ones are ready */
             for(sock_index=0; sock_index<=head_socket; sock_index+=1){
 
                 if(FD_ISSET(sock_index, &server_watch_list)){
-
+                    printf("sock index %d\n",sock_index);
                     //new command from STDIN
                     if (sock_index == STDIN){
                     	char *cmd = (char*) malloc(sizeof(char)*CMD_SIZE);
@@ -802,6 +810,7 @@ void server_mode(int server_port){
                     }
                     //new client is requesting connection
                     else if(sock_index == server_socket){
+                        printf("socket has event\n");
                         caddr_len = sizeof(client_addr);
                         fdaccept = accept(server_socket, (struct sockaddr *)&client_addr, &caddr_len);
                         printf("new client accepted\n");
@@ -1227,7 +1236,9 @@ int main(int argc, char **argv){
 int connect_to_server(char *server_ip, int server_port,char* client_port){
     int fdsocket, len;
     struct sockaddr_in server_addr;
-
+    printf("server ip is %s\n",server_ip);
+    printf("server port is %d\n",server_port);
+    printf("client port is %d\n",client_port);
     fdsocket = socket(AF_INET, SOCK_STREAM, 0);
     if(fdsocket < 0)
        perror("Failed to create socket");
@@ -1236,6 +1247,7 @@ int connect_to_server(char *server_ip, int server_port,char* client_port){
     server_addr.sin_family = AF_INET;
     inet_pton(AF_INET, server_ip, &server_addr.sin_addr);
     printf("server port %d\n",server_port);
+    printf("server IP %s\n",server_ip);
     server_addr.sin_port = htons(server_port);
     printf("trying to connect\n");
     if(connect(fdsocket, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0)
@@ -1321,15 +1333,18 @@ int validate_number(char *str) {
 }
 int valid_ip(char* ip_address){
     //used code in https://www.tutorialspoint.com/c-program-to-validate-an-ip-address
-    
+    char shadow_IP[IP_SIZE];
+    strcpy(shadow_IP,ip_address);
     int i, num, dots = 0;
-   char *ptr;
-   if (ip_address == NULL)
-      return 0;
-    ptr = strtok(ip_address, ".");
-    if (ptr == NULL)
+    char *ptr;
+    if (shadow_IP == NULL)
         return 0;
-   while (ptr) {
+        ptr = strtok(shadow_IP, ".");
+        if (ptr == NULL)
+            return 0;
+    printf("shadow ip null checked\n");
+    while (ptr) {
+        printf("checking valid number\n");
         if (!validate_number(ptr)) 
             return 0;
         num = atoi(ptr); 
@@ -1342,7 +1357,7 @@ int valid_ip(char* ip_address){
             return 0;
     }
     if (dots != 3) 
-       return 0;
+        return 0;
     return 1;
 	
 }
