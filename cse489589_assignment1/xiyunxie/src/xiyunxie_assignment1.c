@@ -41,6 +41,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include <ctype.h>
+#include <signal.h>
 #define TRUE 1
 #define MSG_SIZE 256
 #define BUFFER_SIZE 256
@@ -56,18 +57,23 @@
 #define FILE_PATH_SIZE 20
 int client_first_login=1;
 int listen_port;
-char ip_for_client[BUFFER_SIZE];
+char ip_for_client[IP_SIZE];
 char* client_ip;
 char c_port[PORT_SIZE];
 char* server_ip;
 int serverfd_for_client;
 char host_name[BUFFER_SIZE];
 int client_logged_in = 0;
+
+int server_socket;
+int client_bind;
+int run_mode=0;
+
 fd_set server_master_list, server_watch_list;
 fd_set client_master_list, client_watch_list;
 struct client_record {
     int id;
-    char ip_addr[BUFFER_SIZE];
+    char ip_addr[IP_SIZE];
     char hostname[HOST_SIZE];
     int client_port;
     int msg_received;
@@ -131,6 +137,7 @@ void print_all_buffer_msgs();
 void print_block_lists(char* client_ip);
 void print_all_block_lists();
 int get_receiver_fd(char* client_ip);
+void sighandler(int sig_num);
 /**
  * main function
  *
@@ -143,7 +150,7 @@ void client_mode(int client_port){
     listen_port = client_port;
     //client bind socket
     printf("client port %d\n",client_port);
-    int client_bind = client_bind_socket(client_port);
+    client_bind = client_bind_socket(client_port);
     if(client_bind==0)
         exit(-1);
     printf("PA1-Client on\n");
@@ -285,7 +292,12 @@ void client_mode(int client_port){
                                         memset(&server_respond_message,'\0',sizeof(server_respond_message));
                                         //keep receiving new data
                                         if(recv(serverfd_for_client, &server_respond_message, sizeof(server_respond_message), 0)==sizeof(server_respond_message)){
+                                            cse4589_print_and_log("[RECEIVED:SUCCESS]\n");
+                                            fflush(stdout);
+                            
                                             cse4589_print_and_log("msg from:%s\n[msg]:%s\n", server_respond_message.sender_ip, server_respond_message.msg);
+                                            cse4589_print_and_log("[RECEIVED:END]\n");
+                                            fflush(stdout);
                                         }
                                     }
                                     
@@ -342,17 +354,19 @@ void client_mode(int client_port){
                         else if((strcmp(client_args[0],"LIST"))==0)
 						{
                             cse4589_print_and_log("[LIST:SUCCESS]\n");
+                            fflush(stdout);
                             int print_index=1;
                             for(int i=0;i<4;i++){
                                 if(client_list[i].struct_occupied==1&&client_list[i].status==1){
                                     char login[20];
                                     strcpy(login,"logged-in");
                                 // printf("%-5d%-35s%-20s%-8d\n", print_index, client_list[i].hostname, client_list[i].ip_addr, client_list[i].client_port);
-                                    cse4589_print_and_log("%-5d%-35s%-20s%-8d\n", print_index, client_list[i].hostname, client_list[i].ip_addr, client_list[i].client_port);
-                                    fflush(stdout);
+                                    cse4589_print_and_log("%-5d%-35s%-20s%-8d\n", print_index++, client_list[i].hostname, client_list[i].ip_addr, client_list[i].client_port);
+                                    // fflush(stdout);
                                 }
                             }
                             cse4589_print_and_log("[LIST:END]\n");
+                            // fflush(stdout);
                             continue;
 						}
                         else if((strcmp(client_args[0],"REFRESH"))==0)
@@ -381,7 +395,7 @@ void client_mode(int client_port){
                                         if(client_list[i].struct_occupied==1&&client_list[i].status==1){
                                             char login[20];
                                             strcpy(login,"logged-in");
-                                        printf("%-5d%-35s%-20s%-8d\n", print_index, client_list[i].hostname, client_list[i].ip_addr, client_list[i].client_port);
+                                        printf("%-5d%-35s%-20s%-8d\n", print_index++, client_list[i].hostname, client_list[i].ip_addr, client_list[i].client_port);
                                         // cse4589_print_and_log("%-5d%-35s%-8d%-8d%-8s\n", print_index++, client_list[i].hostname, client_list[i].msg_sent, client_list[i].msg_received, login);
                                         }
                                     }
@@ -431,7 +445,9 @@ void client_mode(int client_port){
                             while(cmd_for_send[msg_start+msg_length]!='\0'){
                                 msg_length++;
                             }
-                            // printf("get msg length\n");
+                            printf("get msg length %d\n",msg_length);
+                            if(msg_length>256)
+                                msg_length==256;
                             char *msg_ptr = cmd_for_send+msg_start;
                             memset(&client_message, '\0', sizeof(client_message));
                             strcpy(client_message.cmd,"SEND");
@@ -609,7 +625,7 @@ void client_mode(int client_port){
 						}
                         else if((strcmp(client_args[0],"EXIT"))==0)
 						{
-							if(client_logged_in==1){
+							if(client_first_login==1){
                                 memset(&client_message, '\0', sizeof(client_message));
                                 strcpy(client_message.cmd,"EXIT");
                                 strcpy(client_message.sender_ip,ip_for_client);
@@ -739,7 +755,19 @@ void client_mode(int client_port){
                         // 	cse4589_print_and_log("msg from:%s\n[msg]:%s\n", server_respond_message.sender_ip, server_respond_message.msg);
                         // }
                         if(recv(sock_index, &server_respond_message, sizeof(server_respond_message), 0)==sizeof(server_respond_message)){
-                            cse4589_print_and_log("msg from:%s\n[msg]:%s\n", server_respond_message.sender_ip, server_respond_message.msg);
+                            printf("msg is %s\n",server_respond_message.msg);
+                            if(strcmp(server_respond_message.msg,"server_will_exit")==0){
+                                close(serverfd_for_client);
+                                printf("server fd closed\n");
+                            }
+                            else{
+                                cse4589_print_and_log("[RECEIVED:SUCCESS]\n");
+                                fflush(stdout);
+                                cse4589_print_and_log("msg from:%s\n[msg]:%s\n", server_respond_message.sender_ip, server_respond_message.msg);
+                                cse4589_print_and_log("[RECEIVED:END]\n");
+                                fflush(stdout);
+                            }
+                            
                         }
                         // free();
                     }
@@ -756,7 +784,7 @@ void server_mode(int server_port){
     //running server
     int client_count = 0;
 	printf("Server on\n");
-	int port, server_socket, head_socket, selret, sock_index, fdaccept=0, caddr_len;
+	int port, head_socket, selret, sock_index, fdaccept=0, caddr_len;
 	struct sockaddr_in server_addr, client_addr;
 	//fd_set master_list, watch_list;
 
@@ -885,6 +913,8 @@ void server_mode(int server_port){
 						}
                         else if((strcmp(server_args[0],"LIST"))==0)
 						{
+                            cse4589_print_and_log("[LIST:SUCCESS]\n");
+                            fflush(stdout);
                             int print_index=1;
                             for(int i=0;i<4;i++){
                                 if(client_list[i].struct_occupied==1&&client_list[i].status==1){
@@ -894,6 +924,8 @@ void server_mode(int server_port){
                                 cse4589_print_and_log("%-5d%-35s%-20s%-8d\n", print_index++, client_list[i].hostname, client_list[i].ip_addr, client_list[i].client_port);
                                 }
                             }
+                            cse4589_print_and_log("[LIST:END]\n");
+                            fflush(stdout);
 						}
                         else if((strcmp(server_args[0],"BLOCKED"))==0)
 						{
@@ -901,6 +933,8 @@ void server_mode(int server_port){
                             int print_index = 1;
                             if(valid_ip(server_args[1])&&(ip_index=ip_exist(server_args[1]))>=0){
                                 printf("print blocking of %s\n",server_args[1]);
+                                cse4589_print_and_log("[BLOCKED:SUCCESS]\n");
+                                fflush(stdout);
                                 for(int i=0;i<4;i++){
                                     if(strcmp(block_list_for_server[i].blocker.ip_addr,server_args[1])==0){
                                         //find block list of a client
@@ -916,10 +950,14 @@ void server_mode(int server_port){
                                         break;
                                     }
                                 }
+                                cse4589_print_and_log("[BLOCKED:END]\n");
+                                fflush(stdout);
                             }
                             else{
                                 cse4589_print_and_log("[BLOCKED:ERROR]\n");
+                                fflush(stdout);
                                 cse4589_print_and_log("[BLOCKED:END]\n");
+                                fflush(stdout);
                             }
                             
 						}
@@ -1158,6 +1196,9 @@ void server_mode(int server_port){
                                 // printf("fd for receiver of send %d\n",fdaccept);
                                 int is_blocked_by_sender=blocked_by_sender(receiver_ip,sender_ip);
                                 printf("%s is blocked by %s: %d\n",receiver_ip,sender_ip,is_blocked_by_sender);
+                                cse4589_print_and_log("[RELAYED:SUCCESS]\n");
+                                fflush(stdout);
+                                
                                 if(is_blocked_by_sender==0){
                                     //send
                                     for(int i=0;i<4;i++){
@@ -1187,7 +1228,8 @@ void server_mode(int server_port){
                                                         //find ip in msg buffers
                                                         strcpy(server_msg_buffers[j].msgs[server_msg_buffers[j].most_recent_empty_index],client_message);
                                                         strcpy(server_msg_buffers[j].senders[server_msg_buffers[j].most_recent_empty_index],sender_ip);
-                                                        printf("buffered %s from % to %s\n",server_msg_buffers[j].msgs[server_msg_buffers[j].most_recent_empty_index],server_msg_buffers[j].senders[server_msg_buffers[j].most_recent_empty_index],server_msg_buffers[j].receiverIP);
+                                                        // printf("buffered %s from %s to %s\n",server_msg_buffers[j].msgs[server_msg_buffers[j].most_recent_empty_index],server_msg_buffers[j].senders[server_msg_buffers[j].most_recent_empty_index],server_msg_buffers[j].receiverIP);
+                                                        cse4589_print_and_log("msg from:%s, to:%s\n[msg]:%s\n",server_msg_buffers[j].senders[server_msg_buffers[j].most_recent_empty_index],server_msg_buffers[j].receiverIP, server_msg_buffers[j].msgs[server_msg_buffers[j].most_recent_empty_index]);
                                                         server_msg_buffers[j].most_recent_empty_index++;
                                                         server_msg_buffers[j].buffered_message_size++;
                                                         
@@ -1203,6 +1245,8 @@ void server_mode(int server_port){
                                         }
                                     }
                                 }
+                                cse4589_print_and_log("[RELAYED:END]\n");
+                                fflush(stdout);
                                 //else do nothing
                                 continue;
                             }
@@ -1230,7 +1274,7 @@ void server_mode(int server_port){
                                                 strcpy(server_respond_message.receiver_ip,client_list[i].ip_addr);
                                                 fdaccept = get_receiver_fd(server_respond_message.receiver_ip);
                                                 if(send(fdaccept,&server_respond_message,sizeof(server_respond_message),0)==sizeof(server_respond_message)){
-                                                    cse4589_print_and_log("msg from:%s, to:%s\n[msg]:%s\n", server_respond_message.sender_ip, server_respond_message.receiver_ip, server_respond_message.msg);
+                                                    
                                                     fflush(stdout);
                                                     client_list[i].msg_received++;
                                                 }
@@ -1259,6 +1303,10 @@ void server_mode(int server_port){
                                         client_list[i].msg_sent++;
                                     }
                                 }
+                                cse4589_print_and_log("[RELAYED:SUCCESS]\n");
+                                char* broadcast_receiver="255.255.255.255";
+                                cse4589_print_and_log("msg from:%s, to:%s\n[msg]:%s\n", sender_ip, broadcast_receiver , client_message);
+                                cse4589_print_and_log("[RELAYED:END]\n");
                                 continue;
                             }
                             else if(strcmp(cmd,"REFRESH")==0){
@@ -1481,6 +1529,35 @@ void server_mode(int server_port){
         }
     }
 }
+void sighandler(int sig_num) 
+{ 
+    // Reset handler to catch SIGTSTP next time 
+    signal(SIGTSTP, sighandler); 
+    printf("run mode %d\n",run_mode);
+    printf("***execute Ctrl+Z\n"); 
+    if(run_mode==0){
+        //client
+        close(client_bind);
+    }
+    else{
+        //server
+        struct server_respond_msg server_last_message;
+        memset(&server_last_message,'\0',sizeof(server_last_message));
+        strcpy(server_last_message.msg,"server_will_exit");
+        for(int i=0;i<4;i++){
+            if(client_list[i].struct_occupied==1){
+                if(send(client_list[i].sockfd,&server_last_message,sizeof(server_last_message),0)==sizeof(server_last_message)){
+                    printf("server notify exit to client\n");
+                    fflush(stdout);
+                    close(client_list[i].sockfd);
+                }
+                
+            }
+        }
+        close(server_socket);
+    }
+    exit(0);
+} 
 int main(int argc, char **argv){
 	/*Init. Logger*/
 	cse4589_init_log(argv[2]);
@@ -1490,16 +1567,19 @@ int main(int argc, char **argv){
 
 	/*Start Here*/
 	//comment 01
+    signal(SIGTSTP, sighandler); 
 	if (argc != 3) {
 		printf("Must be 3 args\n");
 		return 1;
 	}
 	if(strcmp(argv[1], "s")==0)
 	{
+        run_mode=1;
 		server_mode(atoi(argv[2]));
 	}
 	else if(strcmp(argv[1], "c")==0)
 	{
+        run_mode=0;
         strcpy(c_port,argv[2]);
 		client_mode(atoi(argv[2]));
 	}
