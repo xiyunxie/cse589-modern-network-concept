@@ -138,6 +138,7 @@ void print_block_lists(char* client_ip);
 void print_all_block_lists();
 int get_receiver_fd(char* client_ip);
 void sighandler(int sig_num);
+int is_binary_file(FILE* fd);
 /**
  * main function
  *
@@ -679,30 +680,89 @@ void client_mode(int client_port){
                             printf("file path '%s'\n",file_path);
                             // printf("ip valid result: %d\n",ip_v);
                             // printf("port valid result: %d\n",port_v);
-                            FILE *fp = fopen(file_path, "r");
-                            int ip_index = ip_exist(client_args[1]);
-                            if(ip_v==0||fp==NULL||ip_index<0){
-                                cse4589_print_and_log("[SENDFILE:ERROR]\n");
-                                cse4589_print_and_log("[SENDFILE:END]\n");
+                            FILE *fp = fopen(file_path, "rb");
+                            // int ip_index = ip_exist(client_args[1]);
+                            // if(ip_v==0||fp==NULL||ip_index<0){
+                            //     if(fp==NULL){
+                            //         printf("file not found\n");
+                            //     }
+                            //     cse4589_print_and_log("[SENDFILE:ERROR]\n");
+                            //     cse4589_print_and_log("[SENDFILE:END]\n");
+                            //     continue;
+                            // }
+                            if(fp==NULL){
+                                printf("file not found\n");
                                 continue;
                             }
                             printf("ip and file input checked\n");
                             memset(&p2p_message,'\0',sizeof(p2p_message));
                             strcpy(p2p_message.path,file_path);
+                            int is_bin=0;
                             if(fp != NULL){
-                                char symbol;
-                                while((symbol = getc(fp)) != EOF)
-                                {
-                                    strcat(p2p_message.file_buffer, &symbol);
-                                }
-                                fclose(fp);
+                               //unsigned char *buffer = malloc(FILE_SIZE);
+                               unsigned char buffer[FILE_SIZE];
+                                memset(buffer,'\0',FILE_SIZE);
+                                printf("going to read file\n");
+                                fread(buffer, FILE_SIZE,1,fp);
+                                
+                                    printf("file read\n");
+                                    for (int i = 0; i < FILE_SIZE; i++ ){
+                                        // printf("0x%02x ",buffer[i]);
+                                        // if (i%16==0&&i!=0){
+                                        //     printf("\n");
+                                        // }
+                                        if (buffer[i] > 127){
+                                            // printf("contains un-ASCII\n");
+                                            // printf("0x%02x\n",buffer[i]);
+                                            is_bin=1;
+                                            // break;
+                                        }
+                                    }
+                                    if(is_bin==0){
+                                        printf("is a txt file\n");
+                                        fclose(fp);
+                                        fp = fopen(file_path, "r");
+                                        char symbol;
+                                        while((symbol = getc(fp)) != EOF)
+                                        {
+                                            // printf("%c\n",symbol);
+                                            strcat(p2p_message.file_buffer, &symbol);
+                                            printf("%s\n",p2p_message.file_buffer);
+                                        }
+                                        // printf("%s\n",p2p_message.file_buffer);
+                                        
+                                        fclose(fp);
+                                        
+                                        // printf("binary read\n");
+                                        // printf("%u\n",buffer);
+                                    }
+                                    else{
+                                        //else handle bin
+                                        for(int i=0;i<60;i++){
+                                            printf("0x%02x\n",buffer[i]);
+                                        }
+                                        fclose(fp);
+                                    }
+                                    
+                                    
+                                    //free(buffer);
+                                
+                                
+                                
+                                
+                                
                             }
+                            printf("end\n");
+                            
+                            continue;
+                            
+                            int ip_index = ip_exist(client_args[1]);
                             int fdsocket, len;
                             int port = client_list[ip_index].client_port;
                             struct sockaddr_in p2p_addr;
                             printf("p2p ip is %s\n",client_args[1]);
                             printf("p2p port is %d\n",port);
-                            
+                            continue;
                             fdsocket = socket(AF_INET, SOCK_STREAM, 0);
                             if(fdsocket < 0){
                                 perror("Failed to create p2p socket");
@@ -1914,4 +1974,24 @@ int get_receiver_fd(char* client_ip){
     }
     printf("cannot find a socket\n");
     return -1;
+}
+int is_binary_file(FILE* fd){
+    unsigned char buffer[FILE_SIZE];
+    memset(buffer,'\0',FILE_SIZE);
+    fread(buffer,sizeof(buffer),1,fd);
+    // printf("%d\n",memchr(buffer, '\0', FILE_SIZE));
+    for (int i = 0; i < FILE_SIZE; i++ ){
+        // printf("0x%02x\n",buffer[i]);
+        if (buffer[i] > 127){
+            printf("contains un-ASCII\n");
+            printf("0x%02x\n",buffer[i]);
+            
+            return 1;
+        }
+        
+    }
+    
+    return 0;
+    
+    
 }
