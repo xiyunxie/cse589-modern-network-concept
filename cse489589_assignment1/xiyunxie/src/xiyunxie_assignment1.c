@@ -686,7 +686,7 @@ void client_mode(int client_port){
                             // printf("server IP %s\n",server_ip);
                             char file_path[FILE_PATH_SIZE];
                             strcpy(file_path,client_args[2]);
-                            printf("file path '%s'\n",file_path);
+                            // printf("file path '%s'\n",file_path);
                             // printf("ip valid result: %d\n",ip_v);
                             // printf("port valid result: %d\n",port_v);
                             FILE *fp = fopen(file_path, "rb");
@@ -700,7 +700,7 @@ void client_mode(int client_port){
                                 continue;
                             }
                             
-                            printf("ip and file input checked\n");
+                            // printf("ip and file input checked\n");
                             memset(&p2p_message,'\0',sizeof(p2p_message));
                             strcpy(p2p_message.path,file_path);
                             int is_bin=0;
@@ -710,19 +710,22 @@ void client_mode(int client_port){
                                 unsigned char ptr_char;
                                 int byte_count=0;
                                 memset(buffer,'\0',FILE_SIZE);
-                                printf("going to read file\n");
-                                fread(buffer, FILE_SIZE,1,fp);
-                                rewind(fp);
+                                // printf("going to read file\n");
+                                
+                                // rewind(fp);
                                 
                                 while (!feof(fp)){                       
                                     ptr_char=fgetc(fp);                   
                                     
                                     byte_count++;
                                 }
+                                rewind(fp);
                                 byte_count--;
-                                printf("b count is %d\n",byte_count);
+                                fread(buffer, byte_count,1,fp);
+                                printf("byte count is %d\n",byte_count);
                                 for (int i = 0; i < byte_count; i++ ){
                                     ptr_char = buffer[i];
+                                    printf("%d\n",ptr_char);
                                     if (ptr_char == EOF){
                                         printf("eof\n");
                                         break;
@@ -730,6 +733,7 @@ void client_mode(int client_port){
                                     
                                     if (ptr_char > 127){
                                         is_bin=1;
+                                        printf("loop get bin\n");
                                         // break;
                                     }
                                 }
@@ -739,8 +743,8 @@ void client_mode(int client_port){
                                 int fdsocket, len;
                                 int port = client_list[ip_index].client_port;
                                 struct sockaddr_in p2p_addr;
-                                printf("p2p ip is %s\n",client_args[1]);
-                                printf("p2p port is %d\n",port);
+                                // printf("p2p ip is %s\n",client_args[1]);
+                                // printf("p2p port is %d\n",port);
                                 
                                 fdsocket = socket(AF_INET, SOCK_STREAM, 0);
                                 if(fdsocket < 0){
@@ -748,13 +752,13 @@ void client_mode(int client_port){
                                     continue;
                                 }
                                     
-                                printf("p2p socket for host created\n");
+                                // printf("p2p socket for host created\n");
                                 bzero(&p2p_addr, sizeof(p2p_addr));
                                 p2p_addr.sin_family = AF_INET;
                                 inet_pton(AF_INET, client_args[1], &p2p_addr.sin_addr);
-                                printf("p2p addr get\n");
+                                // printf("p2p addr get\n");
                                 p2p_addr.sin_port = htons(port);
-                                printf("trying to connect\n");
+                                // printf("trying to connect\n");
                                 
                                 ////////////////////////////////////////////////////////
                                 if(is_bin==0){
@@ -770,9 +774,7 @@ void client_mode(int client_port){
                                     // memset(buffer,'\0',FILE_SIZE);
                                     while((symbol = getc(fp2)) != EOF)
                                     {
-                                        if(symbol==2){
-                                            printf("^B\n");
-                                        }
+                                        
                                         // printf("%c\n",symbol);
                                         symbol_count++;
                                         // strcat(buffer, &symbol);
@@ -788,6 +790,7 @@ void client_mode(int client_port){
                                     else
                                         printf("Connected p2p\n");
                                     // printf("goint to send msg\n");
+                                    // continue;
                                     if(send(fdsocket,&p2p_message,sizeof(p2p_message),0)==sizeof(p2p_message)){
                                         printf("txt head msg sent\n");
                                         while((symbol = getc(fp2)) != EOF)
@@ -819,6 +822,13 @@ void client_mode(int client_port){
                                         printf("Connected p2p\n");
                                     if(send(fdsocket,&p2p_message,sizeof(p2p_message),0)==sizeof(p2p_message)){
                                         printf("bin head msg sent\n");
+                                        for(int i=0;i<byte_count;i++){
+                                            memset(&p2p_file,'\0',sizeof(p2p_file));
+                                            memcpy(&p2p_file.bin_char,&buffer[i],sizeof(unsigned char));
+                                            if(send(fdsocket,&p2p_file,sizeof(p2p_file),0)==sizeof(p2p_file)){
+                                                // printf("**sent %c\n",p2p_file.txt_char);
+                                            }
+                                        }
                                     }
                                     // for(int i=0;i<60;i++){
                                     //     printf("0x%02x\n",buffer[i]);
@@ -866,8 +876,8 @@ void client_mode(int client_port){
                                 //printf("%s\n",p2p_message.file_buffer);
                                 for(int i=0;i<p2p_message.length;i++){
                                     if(recv(p2p_accept_fd, &p2p_file, sizeof(p2p_file), 0) ==sizeof(p2p_file)){
-                                        printf("-----------\n");
-                                        printf("%c\n",p2p_file.txt_char);
+                                        // printf("-----------\n");
+                                        printf("%c",p2p_file.txt_char);
                                         fputc(p2p_file.txt_char,fp);
                                     }
                                 }
@@ -879,13 +889,14 @@ void client_mode(int client_port){
                                 FILE *fp = fopen(p2p_message.path,"ab");
                                 for(int i=0;i<p2p_message.length;i++){
                                     if(recv(p2p_accept_fd, &p2p_file, sizeof(p2p_file), 0) ==sizeof(p2p_file)){
-                                        printf("0x%02x",p2p_file.bin_char);
-                                        if((i+1)%16==0){
-                                            printf("\n");
-                                        }
+                                        // printf("0x%02x",p2p_file.bin_char);
+                                        // if((i+1)%16==0){
+                                        //     printf("\n");
+                                        // }
                                         fwrite(&p2p_file.bin_char , 1 , sizeof(p2p_file.bin_char) , fp );
                                     }
                                 }
+                                printf("bin recv end\n");
                                 // for(int i=0;i<20;i++){
                                 //     printf("0x%02x\n",p2p_message.bin_buffer[i]);
                                 // }
