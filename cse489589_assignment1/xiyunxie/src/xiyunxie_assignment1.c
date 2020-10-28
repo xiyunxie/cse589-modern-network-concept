@@ -113,15 +113,17 @@ struct server_buffered_msg{
 };
 struct p2p_msg{
     int is_txt;
+    int length;
     char path[FILE_PATH_SIZE];
     
 };
-struct p2p_file{
+struct p2p_file_char{
     char txt_char;
     unsigned char bin_char;
     
 };
 struct p2p_msg p2p_message;
+struct p2p_file_char p2p_file;
 struct server_buffered_msg server_msg_buffers[4];
 void client_mode(int client_port);
 void server_mode(int server_port);
@@ -712,14 +714,14 @@ void client_mode(int client_port){
                                 fread(buffer, FILE_SIZE,1,fp);
                                 rewind(fp);
                                 
-                                while (!feof(fp)){                        // while not end of file
-                                    ptr_char=fgetc(fp);                         // get a character/byte from the file
+                                while (!feof(fp)){                       
+                                    ptr_char=fgetc(fp);                   
                                     
                                     byte_count++;
                                 }
                                 byte_count--;
                                 printf("b count is %d\n",byte_count);
-                                for (int i = 0; i < FILE_SIZE; i++ ){
+                                for (int i = 0; i < byte_count; i++ ){
                                     ptr_char = buffer[i];
                                     if (ptr_char == EOF){
                                         printf("eof\n");
@@ -727,8 +729,6 @@ void client_mode(int client_port){
                                     }
                                     
                                     if (ptr_char > 127){
-                                        // printf("contains un-ASCII\n");
-                                        // printf("0x%02x\n",buffer[i]);
                                         is_bin=1;
                                         // break;
                                     }
@@ -760,30 +760,48 @@ void client_mode(int client_port){
                                 if(is_bin==0){
                                     printf("is a txt file\n");
                                     fclose(fp);
-                                    fp = fopen(file_path, "r");
+                                    FILE* fp2 = fopen(file_path, "r");
                                     memset(&p2p_message, '\0', sizeof(p2p_message));
                                     p2p_message.is_txt=1;
                                     strcpy(p2p_message.path,file_path);
                                     char symbol;
-                                    char symbol_count;
-                                    while((symbol = getc(fp)) != EOF)
+                                    int symbol_count;
+                                    // char buffer[FILE_SIZE];
+                                    // memset(buffer,'\0',FILE_SIZE);
+                                    while((symbol = getc(fp2)) != EOF)
                                     {
+                                        if(symbol==2){
+                                            printf("^B\n");
+                                        }
                                         // printf("%c\n",symbol);
                                         symbol_count++;
-                                        
+                                        // strcat(buffer, &symbol);
                                     }
+                                    rewind(fp2);
                                     printf("symbol count is %d\n",symbol_count);
-                                    
-                                    continue;
+                                    p2p_message.length = symbol_count;
+                                    // char new_buffer[symbol_count];
+                                    // strncpy(new_buffer,buffer,symbol_count);
+                                    // printf("new buffer %s\n",new_buffer);
                                     if(connect(fdsocket, (struct sockaddr*)&p2p_addr, sizeof(p2p_addr)) < 0)
                                         perror("Connect failed");
                                     else
                                         printf("Connected p2p\n");
-                                    printf("goint to send file\n");
-                                    // if(send(fdsocket,&p2p_message,sizeof(p2p_message),0)==sizeof(p2p_message)){
-                                    //     printf("txt file sent\n");
-                                    // }
-                                    fclose(fp);
+                                    // printf("goint to send msg\n");
+                                    if(send(fdsocket,&p2p_message,sizeof(p2p_message),0)==sizeof(p2p_message)){
+                                        printf("txt head msg sent\n");
+                                        while((symbol = getc(fp2)) != EOF)
+                                        {
+                                            memset(&p2p_file,'\0',sizeof(p2p_file));
+                                            p2p_file.txt_char = symbol;
+                                            if(send(fdsocket,&p2p_file,sizeof(p2p_file),0)==sizeof(p2p_file)){
+                                                // printf("**sent %c\n",p2p_file.txt_char);
+                                            }
+                                        }
+                                        
+                                        
+                                    }
+                                    fclose(fp2);
                                     
                                     // printf("binary read\n");
                                     // printf("%u\n",buffer);
@@ -792,6 +810,7 @@ void client_mode(int client_port){
                                     //else handle bin
                                     memset(&p2p_message, '\0', sizeof(p2p_message));
                                     p2p_message.is_txt=0;
+                                    p2p_message.length = byte_count;
                                     strcpy(p2p_message.path,file_path);
                                     //memcpy(&p2p_message.bin_buffer,buffer,FILE_SIZE);
                                     if(connect(fdsocket, (struct sockaddr*)&p2p_addr, sizeof(p2p_addr)) < 0)
@@ -799,7 +818,7 @@ void client_mode(int client_port){
                                     else
                                         printf("Connected p2p\n");
                                     if(send(fdsocket,&p2p_message,sizeof(p2p_message),0)==sizeof(p2p_message)){
-                                        printf("bin file sent\n");
+                                        printf("bin head msg sent\n");
                                     }
                                     // for(int i=0;i<60;i++){
                                     //     printf("0x%02x\n",buffer[i]);
@@ -838,18 +857,39 @@ void client_mode(int client_port){
                         printf("size of p2p msg %d\n",sizeof(p2p_message));
                         if(recv(p2p_accept_fd, &p2p_message, sizeof(p2p_message), 0) ==sizeof(p2p_message)){
                             printf("path is %s\n",p2p_message.path);
+                            printf("file size %d\n",p2p_message.length);
+                            
                             if(p2p_message.is_txt==1){
+                                FILE* fp = fopen(p2p_message.path,"a");
                                 //txt file
                                 printf("recv a txt\n");
                                 //printf("%s\n",p2p_message.file_buffer);
-                                
+                                for(int i=0;i<p2p_message.length;i++){
+                                    if(recv(p2p_accept_fd, &p2p_file, sizeof(p2p_file), 0) ==sizeof(p2p_file)){
+                                        printf("-----------\n");
+                                        printf("%c\n",p2p_file.txt_char);
+                                        fputc(p2p_file.txt_char,fp);
+                                    }
+                                }
+                                fclose(fp);
                             }
                             else{
                                 //binary file
                                 printf("recv a bin\n");
+                                FILE *fp = fopen(p2p_message.path,"ab");
+                                for(int i=0;i<p2p_message.length;i++){
+                                    if(recv(p2p_accept_fd, &p2p_file, sizeof(p2p_file), 0) ==sizeof(p2p_file)){
+                                        printf("0x%02x",p2p_file.bin_char);
+                                        if((i+1)%16==0){
+                                            printf("\n");
+                                        }
+                                        fwrite(&p2p_file.bin_char , 1 , sizeof(p2p_file.bin_char) , fp );
+                                    }
+                                }
                                 // for(int i=0;i<20;i++){
                                 //     printf("0x%02x\n",p2p_message.bin_buffer[i]);
                                 // }
+                                fclose(fp);
                             }
                             printf("p2p receiver end\n");
                             
@@ -864,17 +904,6 @@ void client_mode(int client_port){
                         /* Initialize buffer to receieve response */
                         // char *buffer = (char*) malloc(sizeof(char)*BUFFER_SIZE);
                         memset(&server_respond_message, '\0', sizeof(server_respond_message));
-
-                        // if(recv(sock_index, &server_respond_message, sizeof(server_respond_message), 0) <= 0){
-                        //     close(sock_index);
-                        //     printf("Remote Host terminated connection!\n");
-
-                        //     /* Remove from watched list */
-                        //     FD_CLR(sock_index, &server_master_list);
-                        // }
-                        // else {//print message 
-                        // 	cse4589_print_and_log("msg from:%s\n[msg]:%s\n", server_respond_message.sender_ip, server_respond_message.msg);
-                        // }
                         if(recv(sock_index, &server_respond_message, sizeof(server_respond_message), 0)==sizeof(server_respond_message)){
                             printf("msg is %s\n",server_respond_message.msg);
                             if(strcmp(server_respond_message.msg,"server_will_exit")==0){
