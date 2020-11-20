@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 {
   "ExpandedNodes": [
     "",
@@ -6,4 +7,14 @@
   ],
   "SelectedNode": "\\xiyunxie\\src\\xiyunxie_assignment1.c",
   "PreviewInSolutionExplorer": false
+=======
+{
+  "ExpandedNodes": [
+    "",
+    "\\xiyunxie",
+    "\\xiyunxie\\src"
+  ],
+  "SelectedNode": "\\xiyunxie\\src\\xiyunxie_assignment1.c",
+  "PreviewInSolutionExplorer": false
+>>>>>>> cddd872a44abeb7261e3d386ad3912dab960d6bc
 }
