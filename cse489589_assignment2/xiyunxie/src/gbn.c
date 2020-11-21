@@ -14,7 +14,11 @@
 **********************************************************************/
 
 /********* STUDENTS WRITE THE NEXT SEVEN ROUTINES *********/
+#define BUFFER_SIZE 1000
+#define MSG_SIZE 20
+#define TIMEOUT 10
 
+int pkt_checksum(int seq,int ack,char* msg_ptr);
 /* called from layer 5, passed the data to be sent to other side */
 void A_output(message)
   struct msg message;
@@ -56,4 +60,14 @@ void B_input(packet)
 void B_init()
 {
 
+}
+
+int pkt_checksum(int seq,int ack,char* msg_ptr){
+  int sum = 0;
+  for (int i=0; i<MSG_SIZE; i++){
+    sum += (int)(msg_ptr[i]);
+  }
+  sum += ack;
+  sum += seq;
+  return sum;
 }
