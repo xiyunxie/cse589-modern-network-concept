@@ -66,7 +66,7 @@ int pkt_checksum(int seq,int ack,char* msg_ptr){
   int sum = 0;
   for (int i=0; i<MSG_SIZE; i++){
     sum += (int)(msg_ptr[i]);
-  }
+  } 
   sum += ack;
   sum += seq;
   return sum;
