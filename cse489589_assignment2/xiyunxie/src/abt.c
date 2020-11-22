@@ -90,6 +90,7 @@ void A_input(packet)
     A_waiting_ACK = next_seq(A_waiting_ACK);
     A_goint_to_send = next_seq(A_goint_to_send);
     A_state = (A_state+1)%4;
+    stoptimer(A);
   }
   else{
     return;
@@ -124,6 +125,10 @@ void B_input(packet)
   if(packet.checksum == check_summ && packet.acknum == B_goint_to_ACK){
     B_goint_to_ACK = next_seq(B_goint_to_ACK);
     tolayer5(B,packet.payload);
+    packet.acknum = packet.seqnum;
+    check_summ = pkt_checksum(packet.seqnum,packet.acknum,packet.payload);
+    packet.checksum = check_summ;
+    tolayer3(B, packet);
   }
   else{
     if(packet.checksum != check_summ){
