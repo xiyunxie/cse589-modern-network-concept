@@ -16,7 +16,7 @@
 /********* STUDENTS WRITE THE NEXT SIX ROUTINES *********/
 #define BUFFER_SIZE 1000
 #define MSG_SIZE 20
-#define TIMEOUT 10
+#define TIMEOUT 10.0
 
 #define A_WAITING_FOR_CALL_0 0
 #define A_WAITING_FOR_ACK_0 1
@@ -68,6 +68,7 @@ void A_output(message)
     current_packet.checksum = check_summ;
     //send packet to layer3 and free massage
     tolayer3(A, current_packet);
+    printf("A send seq of %d\n",current_packet.seqnum);
     free(poped_msg);
     //A change state
     A_state = (A_state+1)%4;
@@ -103,6 +104,7 @@ void A_timerinterrupt()
   //if A is in waiting state
   if(A_state == A_WAITING_FOR_ACK_0||A_state == A_WAITING_FOR_ACK_1){
     tolayer3(A, current_packet);
+    printf("A send seq of %d\n",current_packet.seqnum);
     starttimer(A,TIMEOUT);
   }
 }  
@@ -128,6 +130,7 @@ void B_input(packet)
     packet.acknum = packet.seqnum;
     check_summ = pkt_checksum(packet.seqnum,packet.acknum,packet.payload);
     packet.checksum = check_summ;
+    printf("B send ACK of %d\n",packet.acknum);
     tolayer3(B, packet);
   }
   else{

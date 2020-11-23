@@ -16,7 +16,7 @@
 /********* STUDENTS WRITE THE NEXT SEVEN ROUTINES *********/
 #define BUFFER_SIZE 1000
 #define MSG_SIZE 20
-#define TIMEOUT 10
+#define TIMEOUT 10.0
 int A = 0;
 int B = 1;
 int base_A = 0;
@@ -40,15 +40,16 @@ void push_msg(struct msg *message,int seqnum,int acknum);
 struct msg_buffer* get_last_msg();
 int pkt_checksum(int seq,int ack,char* msg_ptr);
 
-void send_next_packet();
+void send_packet_nextseq_to_windows_end();
+
 /* called from layer 5, passed the data to be sent to other side */
 void A_output(message)
   struct msg message;
 {
-  
-  if(next_seq>=base_A+window_size) return;//refuse data
   //will create packet at list tail, ack is 0 for A
   push_msg(message,next_seq,0);
+  if(next_seq>=base_A+window_size) return;//refuse data
+  
   //will send last(next_seq) packet
   struct msg_buffer *poped_msg = get_last_msg();
   if(poped_msg==NULL){
@@ -58,6 +59,7 @@ void A_output(message)
   tolayer3(A,poped_msg->packet);
   if(base_A == next_seq) starttimer(A,TIMEOUT);
   next_seq++;
+  return;
 }
 
 /* called from layer 3, when a packet arrives for layer 4 */
@@ -68,13 +70,23 @@ void A_input(packet)
   if(checksum==packet.checksum){
     if(packet.acknum < base_A+window_size && packet.acknum >= base_A){
       
-      base_A = packet.acknum+1;
-      if(base_A == next_seq){
-        stoptimer(A);
+      struct msg_buffer *list_ptr = list_head;
+      for(int i=0;i<base_A;i++){
+        list_ptr = list_ptr->next;
       }
-      else
-        starttimer(A,TIMEOUT);
-      send_next_packet();
+      if(list_ptr->packet.seqnum==packet.seqnum){
+        base_A = packet.acknum+1;
+        if(base_A == next_seq){
+          stoptimer(A);
+        }
+        else
+          starttimer(A,TIMEOUT);
+        send_packet_nextseq_to_windows_end();
+      }
+      else{
+        printf("wrong packet ACK\n");
+        return;
+      }
     }
     else{
       printf("get out of range ack\n");
@@ -97,6 +109,8 @@ void A_timerinterrupt()
   for(int i=0;i<(next_seq-base_A);i++){
     //will send packets from baseA to next_seq again
     tolayer3(A,list_ptr->packet);
+    printf("A send seq of %d\n",list_ptr->packet.seqnum);
+    list_ptr = list_ptr->next;
   }
   starttimer(A,TIMEOUT);
 }  
@@ -121,6 +135,7 @@ void B_input(packet)
       tolayer5(B,packet.payload);
       B_ACK_PKT = create_pkt(0,++B_expect,B_ACK_PKT_payload);
       tolayer3(B,*B_ACK_PKT);
+      printf("B send ack of %d\n",B_expect);
       return;
     }
     else{
@@ -190,6 +205,15 @@ struct msg_buffer* get_last_msg(){
   return list_tail;
 }
 
-void send_next_packet(){
-
+void send_packet_nextseq_to_windows_end(){
+  struct msg_buffer *list_ptr = list_head;
+  for(int i=0;i<next_seq;i++){
+    list_ptr = list_ptr->next;
+  }
+  for(int i=next_seq;i<base_A+window_size;i++){
+    tolayer3(A,list_ptr->packet);
+    printf("A send seq of %d\n",list_ptr->packet.seqnum);
+    list_ptr = list_ptr->next;
+  }
+  
 }
