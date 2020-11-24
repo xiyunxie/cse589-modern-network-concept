@@ -27,15 +27,13 @@ int window_size;
 int packet_count=0;
 char *B_ACK_PKT_payload = "receive";
 struct pkt *B_ACK_PKT;
-struct msg_buffer {
-  int id;
+struct A_buf {
+  int occupied;
+  int seq;
   struct pkt packet;
-  struct msg_buffer *next;
 };
-struct msg_buffer *list_head;
-struct msg_buffer *list_tail;
+struct A_buf A_buffer[BUFFER_SIZE];
 
-struct pkt *packet_list;
 
 void push_msg(struct msg *message,int seqnum,int acknum);
 struct msg_buffer* get_nextseq_msg();
@@ -52,12 +50,12 @@ void A_output(message)
   if(next_seq>=base_A+window_size) return;//refuse data
   
   //will send last(next_seq) packet
-  struct msg_buffer *poped_msg = get_nextseq_msg();
+  struct A_buf *poped_msg = get_nextseq_msg();
   if(poped_msg==NULL){
     printf("no more packets\n");
     return;
   }
-  tolayer3(A,poped_msg->packet);
+  tolayer3(A,A_buffer[next_seq].packet);
   if(base_A == next_seq) starttimer(A,TIMEOUT);
   next_seq++;
   return;
@@ -71,18 +69,25 @@ void A_input(packet)
   if(checksum==packet.checksum){
     if(packet.acknum < base_A+window_size && packet.acknum >= base_A){
       
-      struct msg_buffer *list_ptr = list_head;
-      for(int i=0;i<base_A;i++){
-        list_ptr = list_ptr->next;
-      }
-      if(list_ptr->packet.seqnum==packet.seqnum){
+      if(A_buffer[base_A].packet.seqnum==packet.acknum){
         base_A = packet.acknum+1;
         if(base_A == next_seq){
           stoptimer(A);
         }
-        else
+        else{
           starttimer(A,TIMEOUT);
-        send_packet_nextseq_to_windows_end();
+        }
+        // int extra_send = 0;  
+        // for(int i=next_seq;i<base_A+window_size;i++){
+        //   if(A_buffer[i].occupied){
+
+        //     tolayer3(A,A_buffer[i].packet);
+        //     printf("A send seq %d\n",A_buffer[i].packet.seqnum);
+        //     extra_send++;
+        //   }
+        //   else break;
+        // }
+        // next_seq += extra_send;
       }
       else{
         printf("wrong packet ACK\n");
@@ -103,15 +108,12 @@ void A_input(packet)
 /* called when A's timer goes off */
 void A_timerinterrupt()
 {
-  struct msg_buffer *list_ptr = list_head;
-  for(int i=0;i<base_A;i++){
-    list_ptr = list_ptr->next;
-  }
-  for(int i=0;i<(next_seq-base_A);i++){
+  for(int i=base_A;i<next_seq;i++){
     //will send packets from baseA to next_seq again
-    tolayer3(A,list_ptr->packet);
-    printf("A send seq of %d\n",list_ptr->packet.seqnum);
-    list_ptr = list_ptr->next;
+    if(A_buffer[i].occupied){
+      tolayer3(A,A_buffer[i].packet);
+      printf("A send seq of %d\n",A_buffer[i].packet.seqnum);
+    }
   }
   starttimer(A,TIMEOUT);
 }  
@@ -121,7 +123,10 @@ void A_timerinterrupt()
 void A_init()
 {
   window_size = getwinsize();
-  //packet_list = malloc(sizeof(struct pkt) * window_size);
+  for(int i=0;i<BUFFER_SIZE;i++){
+    A_buffer[i].seq=i;
+    memcpy(&A_buffer[i].packet,'\0',sizeof(struct pkt));
+  }
 }
 
 /* Note that with simplex transfer from a-to-B, there is no B_output() */
@@ -135,7 +140,7 @@ void B_input(packet)
     if(packet.seqnum==B_expect){
       tolayer5(B,packet.payload);
       free(B_ACK_PKT);
-      B_ACK_PKT = create_pkt(0,++B_expect,B_ACK_PKT_payload);
+      B_ACK_PKT = create_pkt(0,B_expect++,B_ACK_PKT_payload);
       tolayer3(B,*B_ACK_PKT);
       printf("B send ack of %d\n",B_expect);
       return;
@@ -180,46 +185,9 @@ struct pkt* create_pkt(int seqnum, int acknum,char *message){
 }
 
 void push_msg(struct msg message,int seqnum,int acknum){
-  struct msg_buffer *node = malloc(sizeof(struct msg_buffer));
+  struct A_buf *node = malloc(sizeof(struct A_buf));
   struct pkt *packet = create_pkt(seqnum,acknum,message.data);
   memcpy(&node->packet,packet,sizeof(packet));
   free(packet);
-  node->next = NULL;
-  if(list_tail==NULL){
-    //list empty
-    list_head = node;
-    list_tail = list_head;
-  }
-  else{
-    //add node to tail
-    list_tail->next = node;
-    list_tail = list_tail->next;
-    
-  }
-}
-
-struct msg_buffer* get_nextseq_msg(){
-  if(list_head==NULL){
-    printf("Empty list\n");
-    return NULL;
-  }
-  struct msg_buffer *list_ptr = list_head;
-  for(int i=0;i<next_seq;i++){
-    list_ptr = list_ptr->next;
-  }
-  return list_ptr;
-}
-
-void send_packet_nextseq_to_windows_end(){
-  struct msg_buffer *list_ptr = list_head;
-  for(int i=0;i<next_seq;i++){
-    list_ptr = list_ptr->next;
-  }
-  for(int i=next_seq;i<base_A+window_size;i++){
-    if(list_ptr==NULL) break;
-    tolayer3(A,list_ptr->packet);
-    printf("A send seq of %d\n",list_ptr->packet.seqnum);
-    list_ptr = list_ptr->next;
-  }
   
 }

@@ -54,7 +54,7 @@ void A_output(message)
   push_msg(message);
   //check A is in a send-state and what A is going to send is what B wants
   if((A_state == A_WAITING_FOR_CALL_0||A_state == A_WAITING_FOR_CALL_1)&&(A_goint_to_send == B_goint_to_ACK)){
-    struct msg_buffer *poped_msg = pop_msg();
+    struct msg_buffer *poped_msg = list_head;
     if(poped_msg==NULL){
       printf("no more packets\n");
       return;
@@ -69,7 +69,7 @@ void A_output(message)
     //send packet to layer3 and free massage
     tolayer3(A, current_packet);
     printf("A send seq of %d\n",current_packet.seqnum);
-    free(poped_msg);
+    //free(poped_msg);
     //A change state
     A_state = (A_state+1)%4;
     //start timer
@@ -124,7 +124,7 @@ void B_input(packet)
   struct pkt packet;
 {
   int check_summ = pkt_checksum(packet.seqnum,packet.acknum,packet.payload);
-  if(packet.checksum == check_summ && packet.acknum == B_goint_to_ACK){
+  if(packet.checksum == check_summ && packet.seqnum == B_goint_to_ACK){
     B_goint_to_ACK = next_seq(B_goint_to_ACK);
     tolayer5(B,packet.payload);
     packet.acknum = packet.seqnum;
