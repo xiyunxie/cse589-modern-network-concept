@@ -17,6 +17,7 @@
 #define BUFFER_SIZE 1000
 #define MSG_SIZE 20
 #define TIMEOUT 10.0
+int A_count=0;
 int A = 0;
 int B = 1;
 int base_A = 0;
@@ -47,7 +48,7 @@ void A_output(message)
   struct msg message;
 {
   //will create packet at list tail, ack is 0 for A
-  push_msg(message,next_seq,0);
+  push_msg(message,A_count++,0);
   if(next_seq>=base_A+window_size) return;//refuse data
   
   //will send last(next_seq) packet
