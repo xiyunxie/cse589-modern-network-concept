@@ -37,9 +37,9 @@ struct msg_buffer *list_tail;
 struct pkt *packet_list;
 
 void push_msg(struct msg *message,int seqnum,int acknum);
-struct msg_buffer* get_last_msg();
+struct msg_buffer* get_nextseq_msg();
 int pkt_checksum(int seq,int ack,char* msg_ptr);
-
+struct pkt* create_pkt(int seqnum, int acknum,char *message);
 void send_packet_nextseq_to_windows_end();
 
 /* called from layer 5, passed the data to be sent to other side */
@@ -51,7 +51,7 @@ void A_output(message)
   if(next_seq>=base_A+window_size) return;//refuse data
   
   //will send last(next_seq) packet
-  struct msg_buffer *poped_msg = get_last_msg();
+  struct msg_buffer *poped_msg = get_nextseq_msg();
   if(poped_msg==NULL){
     printf("no more packets\n");
     return;
@@ -133,6 +133,7 @@ void B_input(packet)
   if(checksum == packet.checksum){
     if(packet.seqnum==B_expect){
       tolayer5(B,packet.payload);
+      free(B_ACK_PKT);
       B_ACK_PKT = create_pkt(0,++B_expect,B_ACK_PKT_payload);
       tolayer3(B,*B_ACK_PKT);
       printf("B send ack of %d\n",B_expect);
@@ -196,13 +197,16 @@ void push_msg(struct msg message,int seqnum,int acknum){
   }
 }
 
-struct msg_buffer* get_last_msg(){
+struct msg_buffer* get_nextseq_msg(){
   if(list_head==NULL){
     printf("Empty list\n");
     return NULL;
   }
-  
-  return list_tail;
+  struct msg_buffer *list_ptr = list_head;
+  for(int i=0;i<next_seq;i++){
+    list_ptr = list_ptr->next;
+  }
+  return list_ptr;
 }
 
 void send_packet_nextseq_to_windows_end(){
@@ -211,6 +215,7 @@ void send_packet_nextseq_to_windows_end(){
     list_ptr = list_ptr->next;
   }
   for(int i=next_seq;i<base_A+window_size;i++){
+    if(list_ptr==NULL) break;
     tolayer3(A,list_ptr->packet);
     printf("A send seq of %d\n",list_ptr->packet.seqnum);
     list_ptr = list_ptr->next;
