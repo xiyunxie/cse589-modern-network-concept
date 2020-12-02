@@ -1,5 +1,7 @@
 #include "../include/simulator.h"
 #include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
 /* ******************************************************************
  ALTERNATING BIT AND GO-BACK-N NETWORK EMULATOR: VERSION 1.1  J.F.Kurose
 
@@ -44,7 +46,7 @@ int A_waiting_ACK = 0;
 struct pkt current_packet;
 
 int next_seq(int current_seq);
-void push_msg(struct msg *message);
+void push_msg(struct msg message);
 struct msg_buffer* pop_msg();
 int pkt_checksum(int seq,int ack,char* msg_ptr);
 /* called from layer 5, passed the data to be sent to other side */
@@ -135,10 +137,10 @@ void B_input(packet)
   }
   else{
     if(packet.checksum != check_summ){
-      printf("packet from A checksum error \n");
+      printf("packet %d from A checksum error \n",packet.seqnum);
     }
     else{
-      printf("incorrect packet seq\n");
+      printf("packet %d incorrect packet seq\n",packet.seqnum);
     }
     
     return;

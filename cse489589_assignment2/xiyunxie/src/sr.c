@@ -1,5 +1,7 @@
 #include "../include/simulator.h"
 #include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
 /* ******************************************************************
  ALTERNATING BIT AND GO-BACK-N NETWORK EMULATOR: VERSION 1.1  J.F.Kurose
 
@@ -57,8 +59,12 @@ void A_output(message)
 {
   //will create packet at list tail, ack is 0 for A
   A_push_msg(message,a_buffer_count,0);
-  A_buffer[a_buffer_count++].occupied=1;
+  a_buffer_count++;
   if(next_seq>=base_A+window_size) return;//refuse data
+  if(A_buffer[next_seq].occupied==0){
+    printf("no more packets\n");
+    return;
+  }
   tolayer3(A,A_buffer[next_seq].packet);
   A_buffer[next_seq].expire_time = current_time+TIMEOUT;
   next_seq++;
@@ -89,8 +95,10 @@ void A_input(packet)
           timeron = 1;
         }
         //send the packets between next_seq and window's end
-        //send_packet_nextseq_to_windows_end();
+        
           int extra_send=0;
+          printf("========================\n");
+          //send_packet_nextseq_to_windows_end();
           for(int i=next_seq;i<base_A+window_size;i++){
             if(A_buffer[i].occupied){
 
@@ -100,6 +108,7 @@ void A_input(packet)
             }
             else break;
           }
+          printf("========================\n");
           next_seq += extra_send;
       }
       else{//set packets to be acked, so that they won't be retransmitted when time out
@@ -135,7 +144,7 @@ void A_timerinterrupt()
     }
     
   }
-  stoptimer(A);
+  // stoptimer(A);
   starttimer(A,TIMECHECK);
 }  
 
@@ -180,7 +189,7 @@ void B_input(packet)
       }
       else{//B get out of order but in-window packet
         //save packet in buffer
-        memcpy(&B_buffer[packet.seqnum].packet,packet,sizeof(packet));
+        memcpy(&B_buffer[packet.seqnum].packet,&packet,sizeof(packet));
         B_buffer[packet.seqnum].acked==1;
         //send ack
         free(B_ACK_PKT);
@@ -192,7 +201,7 @@ void B_input(packet)
       //send ack
       
     }
-    else{
+    else{//out of window seq, check if a ack is needed
       if(packet.acknum>=base_B-window_size&&packet.acknum<base_B+window_size){
         B_ACK_PKT = create_pkt(0,packet.seqnum,B_ACK_PKT_payload);
         tolayer3(B,*B_ACK_PKT);
@@ -242,9 +251,10 @@ struct pkt* create_pkt(int seqnum, int acknum,char *message){
 }
 
 void A_push_msg(struct msg message,int seqnum,int acknum){
-  struct A_buf *node = malloc(sizeof(struct A_buf));
+ 
   struct pkt *packet = create_pkt(seqnum,acknum,message.data);
-  memcpy(&node->packet,packet,sizeof(packet));
+  memcpy(&A_buffer[seqnum].packet,packet,sizeof(packet));
+  A_buffer[seqnum].occupied = 1;
   free(packet);
   
 }

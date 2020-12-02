@@ -1,5 +1,7 @@
 #include "../include/simulator.h"
 #include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
 /* ******************************************************************
  ALTERNATING BIT AND GO-BACK-N NETWORK EMULATOR: VERSION 1.1  J.F.Kurose
 
@@ -35,23 +37,24 @@ struct A_buf {
 struct A_buf A_buffer[BUFFER_SIZE];
 
 
-void push_msg(struct msg *message,int seqnum,int acknum);
-struct msg_buffer* get_nextseq_msg();
+void push_msg(struct msg message,int seqnum,int acknum);
+
 int pkt_checksum(int seq,int ack,char* msg_ptr);
 struct pkt* create_pkt(int seqnum, int acknum,char *message);
-void send_packet_nextseq_to_windows_end();
+
 
 /* called from layer 5, passed the data to be sent to other side */
 void A_output(message)
   struct msg message;
 {
   //will create packet at list tail, ack is 0 for A
-  push_msg(message,A_count++,0);
+  push_msg(message,A_count,0);
+  A_count++;
   if(next_seq>=base_A+window_size) return;//refuse data
   
   //will send last(next_seq) packet
-  struct A_buf *poped_msg = get_nextseq_msg();
-  if(poped_msg==NULL){
+  // struct A_buf *poped_msg = get_nextseq_msg();
+  if(A_buffer[next_seq].occupied==0){
     printf("no more packets\n");
     return;
   }
@@ -68,39 +71,43 @@ void A_input(packet)
   int checksum = pkt_checksum(packet.seqnum,packet.acknum,packet.payload);
   if(checksum==packet.checksum){
     if(packet.acknum < base_A+window_size && packet.acknum >= base_A){
-      
+      printf("A receive ACK %d, waiting for ACK %d\n",packet.acknum,base_A);
+      //check if ack is at posititon base A
       if(A_buffer[base_A].packet.seqnum==packet.acknum){
+        //received ack at base A
         base_A = packet.acknum+1;
+        
+        int extra_send = 0;  
+        for(int i=next_seq;i<base_A+window_size;i++){
+          //send every packet in window that is available
+          if(A_buffer[i].occupied){
+
+            tolayer3(A,A_buffer[i].packet);
+            printf("A send seq %d\n",A_buffer[i].packet.seqnum);
+            extra_send++;
+          }
+          else break;
+        }
         if(base_A == next_seq){
           stoptimer(A);
         }
         else{
           starttimer(A,TIMEOUT);
         }
-        // int extra_send = 0;  
-        // for(int i=next_seq;i<base_A+window_size;i++){
-        //   if(A_buffer[i].occupied){
-
-        //     tolayer3(A,A_buffer[i].packet);
-        //     printf("A send seq %d\n",A_buffer[i].packet.seqnum);
-        //     extra_send++;
-        //   }
-        //   else break;
-        // }
-        // next_seq += extra_send;
+        next_seq += extra_send;
       }
       else{
-        printf("wrong packet ACK\n");
+        printf("In window but wrong packet ACK in A\n");
         return;
       }
     }
     else{
-      printf("get out of range ack\n");
+      printf("A get out of range ack\n");
       return;
     }
   }
   else{
-    printf("checksum error\n");
+    printf("A get checksum error ACK\n");
     return;
   }
 }
@@ -112,9 +119,10 @@ void A_timerinterrupt()
     //will send packets from baseA to next_seq again
     if(A_buffer[i].occupied){
       tolayer3(A,A_buffer[i].packet);
-      printf("A send seq of %d\n",A_buffer[i].packet.seqnum);
+      printf("In time interrupt, A send seq of %d\n",A_buffer[i].packet.seqnum);
     }
   }
+  // stoptimer(A);
   starttimer(A,TIMEOUT);
 }  
 
@@ -125,7 +133,7 @@ void A_init()
   window_size = getwinsize();
   for(int i=0;i<BUFFER_SIZE;i++){
     A_buffer[i].seq=i;
-    memcpy(&A_buffer[i].packet,'\0',sizeof(struct pkt));
+    memset(&A_buffer[i].packet,'\0',sizeof(struct pkt));
   }
 }
 
@@ -140,24 +148,26 @@ void B_input(packet)
     if(packet.seqnum==B_expect){
       tolayer5(B,packet.payload);
       free(B_ACK_PKT);
-      B_ACK_PKT = create_pkt(0,B_expect++,B_ACK_PKT_payload);
+      B_ACK_PKT = create_pkt(0,packet.seqnum,B_ACK_PKT_payload);
       tolayer3(B,*B_ACK_PKT);
       printf("B send ack of %d\n",B_expect);
+      B_expect++;
       return;
     }
     else{
       //send ACK what B want
       tolayer3(B,*B_ACK_PKT);
+      printf("B send ack of %d\n",B_expect);
       return;
     }
   }
   else{
-    printf("check sum error\n");
+    printf("Packet %d check sum error in B\n",packet.seqnum);
     return;
   }
 }
 
-/* the following rouytine will be called once (only) before any other */
+/* the following routine will be called once (only) before any other */
 /* entity B routines are called. You can use it to do any initialization */
 void B_init()
 {
@@ -185,9 +195,10 @@ struct pkt* create_pkt(int seqnum, int acknum,char *message){
 }
 
 void push_msg(struct msg message,int seqnum,int acknum){
-  struct A_buf *node = malloc(sizeof(struct A_buf));
+  // struct A_buf *node = malloc(sizeof(struct A_buf));
   struct pkt *packet = create_pkt(seqnum,acknum,message.data);
-  memcpy(&node->packet,packet,sizeof(packet));
+  memcpy(&A_buffer[seqnum].packet,packet,sizeof(packet));
+  A_buffer[seqnum].occupied = 1;
   free(packet);
   
 }
