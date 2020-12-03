@@ -76,25 +76,27 @@ void A_input(packet)
       if(A_buffer[base_A].packet.seqnum==packet.acknum){
         //received ack at base A
         base_A = packet.acknum+1;
+        // int timeron = 0;
+        stoptimer(A);
+        if(next_seq>base_A&&next_seq<base_A+window_size&&A_buffer[next_seq].occupied==1){
+          tolayer3(A,A_buffer[next_seq].packet);
+          next_seq++;
+          starttimer(A,TIMEOUT);  
+        }
         
-        int extra_send = 0;  
-        for(int i=next_seq;i<base_A+window_size;i++){
-          //send every packet in window that is available
-          if(A_buffer[i].occupied){
+        // int extra_send = 0;  
+        // for(int i=next_seq;i<base_A+window_size;i++){
+        //   //send every packet in window that is available
+        //   if(A_buffer[i].occupied){
 
-            tolayer3(A,A_buffer[i].packet);
-            // printf("A send seq %d\n",A_buffer[i].packet.seqnum);
-            extra_send++;
-          }
-          else break;
-        }
-        if(base_A == next_seq){
-          stoptimer(A);
-        }
-        else{
-          starttimer(A,TIMEOUT);
-        }
-        next_seq += extra_send;
+        //     tolayer3(A,A_buffer[i].packet);
+        //     // printf("A send seq %d\n",A_buffer[i].packet.seqnum);
+        //     extra_send++;
+        //   }
+        //   else break;
+        // }
+        // if(extra_send>0 && timeron==0) starttimer(A,TIMEOUT);  
+        // next_seq += extra_send;
       }
       else{
         // printf("In window but wrong packet ACK in A\n");
@@ -115,7 +117,7 @@ void A_input(packet)
 /* called when A's timer goes off */
 void A_timerinterrupt()
 {
-  for(int i=base_A;i<next_seq;i++){
+  for(int i=base_A;i<next_seq && i<base_A+window_size;i++){
     //will send packets from baseA to next_seq again
     if(A_buffer[i].occupied){
       tolayer3(A,A_buffer[i].packet);

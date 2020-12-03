@@ -18,8 +18,8 @@
 /********* STUDENTS WRITE THE NEXT SIX ROUTINES *********/
 #define BUFFER_SIZE 1000
 #define MSG_SIZE 20
-#define TIMEOUT 20.0
-
+#define TIMEOUT 30.0
+ 
 #define A_WAITING_FOR_CALL_0 0
 #define A_WAITING_FOR_ACK_0 1
 #define A_WAITING_FOR_CALL_1 2

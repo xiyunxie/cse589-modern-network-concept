@@ -57,7 +57,7 @@ void print_msg(char* message);
 /* called from layer 5, passed the data to be sent to other side */
 void A_output(message)
   struct msg message;
-{
+{ 
   //will create packet at list tail, ack is 0 for A
   A_push_msg(message,a_buffer_count,0);
   printf("A receive msg from layer 5:\n");
