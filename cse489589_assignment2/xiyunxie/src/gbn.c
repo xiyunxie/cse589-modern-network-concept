@@ -18,7 +18,7 @@
 /********* STUDENTS WRITE THE NEXT SEVEN ROUTINES *********/
 #define BUFFER_SIZE 1000
 #define MSG_SIZE 20
-#define TIMEOUT 10.0
+#define TIMEOUT 50.0
 int A_count=0;
 int A = 0;
 int B = 1;
@@ -41,7 +41,7 @@ void push_msg(struct msg message,int seqnum,int acknum);
 
 int pkt_checksum(int seq,int ack,char* msg_ptr);
 struct pkt* create_pkt(int seqnum, int acknum,char *message);
-
+void print_msg(char* message);
 
 /* called from layer 5, passed the data to be sent to other side */
 void A_output(message)
@@ -55,7 +55,7 @@ void A_output(message)
   //will send last(next_seq) packet
   // struct A_buf *poped_msg = get_nextseq_msg();
   if(A_buffer[next_seq].occupied==0){
-    printf("no more packets\n");
+    // printf("no more packets\n");
     return;
   }
   tolayer3(A,A_buffer[next_seq].packet);
@@ -71,7 +71,7 @@ void A_input(packet)
   int checksum = pkt_checksum(packet.seqnum,packet.acknum,packet.payload);
   if(checksum==packet.checksum){
     if(packet.acknum < base_A+window_size && packet.acknum >= base_A){
-      printf("A receive ACK %d, waiting for ACK %d\n",packet.acknum,base_A);
+      // printf("A receive ACK %d, waiting for ACK %d\n",packet.acknum,base_A);
       //check if ack is at posititon base A
       if(A_buffer[base_A].packet.seqnum==packet.acknum){
         //received ack at base A
@@ -83,7 +83,7 @@ void A_input(packet)
           if(A_buffer[i].occupied){
 
             tolayer3(A,A_buffer[i].packet);
-            printf("A send seq %d\n",A_buffer[i].packet.seqnum);
+            // printf("A send seq %d\n",A_buffer[i].packet.seqnum);
             extra_send++;
           }
           else break;
@@ -97,17 +97,17 @@ void A_input(packet)
         next_seq += extra_send;
       }
       else{
-        printf("In window but wrong packet ACK in A\n");
+        // printf("In window but wrong packet ACK in A\n");
         return;
       }
     }
     else{
-      printf("A get out of range ack\n");
+      // printf("A get out of range ack\n");
       return;
     }
   }
   else{
-    printf("A get checksum error ACK\n");
+    // printf("A get checksum error ACK\n");
     return;
   }
 }
@@ -119,7 +119,7 @@ void A_timerinterrupt()
     //will send packets from baseA to next_seq again
     if(A_buffer[i].occupied){
       tolayer3(A,A_buffer[i].packet);
-      printf("In time interrupt, A send seq of %d\n",A_buffer[i].packet.seqnum);
+      // printf("In time interrupt, A send seq of %d\n",A_buffer[i].packet.seqnum);
     }
   }
   // stoptimer(A);
@@ -150,19 +150,19 @@ void B_input(packet)
       free(B_ACK_PKT);
       B_ACK_PKT = create_pkt(0,packet.seqnum,B_ACK_PKT_payload);
       tolayer3(B,*B_ACK_PKT);
-      printf("B send ack of %d\n",B_expect);
+      // printf("B send ack of %d\n",B_expect);
       B_expect++;
       return;
     }
     else{
       //send ACK what B want
       tolayer3(B,*B_ACK_PKT);
-      printf("B send ack of %d\n",B_expect);
+      // printf("B send ack of %d\n",B_expect);
       return;
     }
   }
   else{
-    printf("Packet %d check sum error in B\n",packet.seqnum);
+    // printf("Packet %d check sum error in B\n",packet.seqnum);
     return;
   }
 }
@@ -191,14 +191,32 @@ struct pkt* create_pkt(int seqnum, int acknum,char *message){
     pkt_to_send->acknum = acknum;
     pkt_to_send->checksum = checksum;
     memcpy(pkt_to_send->payload,message,MSG_SIZE);
+    
     return pkt_to_send;
 }
 
 void push_msg(struct msg message,int seqnum,int acknum){
   // struct A_buf *node = malloc(sizeof(struct A_buf));
+  
   struct pkt *packet = create_pkt(seqnum,acknum,message.data);
-  memcpy(&A_buffer[seqnum].packet,packet,sizeof(packet));
+  
+  for(int i=0;i<MSG_SIZE;i++){
+    A_buffer[seqnum].packet.payload[i] = packet->payload[i];
+  }
+  A_buffer[seqnum].packet.seqnum = seqnum;
+  A_buffer[seqnum].packet.checksum = packet->checksum;
+  A_buffer[seqnum].packet.acknum  = acknum;
+  // memcpy(&A_buffer[seqnum].packet,packet,sizeof(packet));
+  // printf("in A's buffer:\n");
+  // print_msg(A_buffer[seqnum].packet.payload);
   A_buffer[seqnum].occupied = 1;
   free(packet);
   
+}
+
+void print_msg(char* message){
+  for(int i=0;i<MSG_SIZE;i++){
+    // printf("%c",message[i]);
+  }
+  // printf("\n");
 }

@@ -18,7 +18,7 @@
 /********* STUDENTS WRITE THE NEXT SIX ROUTINES *********/
 #define BUFFER_SIZE 1000
 #define MSG_SIZE 20
-#define TIMEOUT 10.0
+#define TIMEOUT 20.0
 
 #define A_WAITING_FOR_CALL_0 0
 #define A_WAITING_FOR_ACK_0 1
@@ -49,16 +49,19 @@ int next_seq(int current_seq);
 void push_msg(struct msg message);
 struct msg_buffer* pop_msg();
 int pkt_checksum(int seq,int ack,char* msg_ptr);
+void print_msg(char* message);
 /* called from layer 5, passed the data to be sent to other side */
 void A_output(message)
   struct msg message;
 {
   push_msg(message);
   //check A is in a send-state and what A is going to send is what B wants
+  // printf("A receive msg from layer 5:\n");
+  // print_msg(message.data);
   if((A_state == A_WAITING_FOR_CALL_0||A_state == A_WAITING_FOR_CALL_1)&&(A_goint_to_send == B_goint_to_ACK)){
-    struct msg_buffer *poped_msg = list_head;
+    struct msg_buffer *poped_msg = pop_msg();
     if(poped_msg==NULL){
-      printf("no more packets\n");
+      // printf("no more packets\n");
       return;
     }
     //make packet
@@ -70,7 +73,8 @@ void A_output(message)
     current_packet.checksum = check_summ;
     //send packet to layer3 and free massage
     tolayer3(A, current_packet);
-    printf("A send seq of %d\n",current_packet.seqnum);
+    // printf("A send seq of %d\n",current_packet.seqnum);
+    // print_msg(current_packet.payload);
     //free(poped_msg);
     //A change state
     A_state = (A_state+1)%4;
@@ -78,6 +82,7 @@ void A_output(message)
     starttimer(A,TIMEOUT);
   }
   else{
+    // printf("not able to send next packet\n");
     return;
   }
 }
@@ -90,12 +95,14 @@ void A_input(packet)
   //check checksum and if A is in waiting-state
   if(check_summ==packet.checksum&&A_waiting_ACK==packet.acknum&&(A_state == A_WAITING_FOR_ACK_0||A_state == A_WAITING_FOR_ACK_1)){
     //change state and A's waiting ack and what will be sent
+    // printf("A receive ack of %d\n",packet.acknum);
     A_waiting_ACK = next_seq(A_waiting_ACK);
     A_goint_to_send = next_seq(A_goint_to_send);
     A_state = (A_state+1)%4;
     stoptimer(A);
   }
   else{
+    // printf("check sum error when A receive ack\n");
     return;
   }
 }
@@ -104,9 +111,11 @@ void A_input(packet)
 void A_timerinterrupt()
 {
   //if A is in waiting state
+  // printf("seq of %d timer interrupt\n",current_packet.seqnum);
   if(A_state == A_WAITING_FOR_ACK_0||A_state == A_WAITING_FOR_ACK_1){
     tolayer3(A, current_packet);
-    printf("A send seq of %d\n",current_packet.seqnum);
+    // printf("A send seq of %d\n",current_packet.seqnum);
+    // print_msg(current_packet.payload);
     starttimer(A,TIMEOUT);
   }
 }  
@@ -132,15 +141,22 @@ void B_input(packet)
     packet.acknum = packet.seqnum;
     check_summ = pkt_checksum(packet.seqnum,packet.acknum,packet.payload);
     packet.checksum = check_summ;
-    printf("B send ACK of %d\n",packet.acknum);
+    // printf("B receive:\n");
+    // print_msg(packet.payload);
+    // printf("B send ACK of %d\n",packet.acknum);
     tolayer3(B, packet);
   }
   else{
     if(packet.checksum != check_summ){
-      printf("packet %d from A checksum error \n",packet.seqnum);
+      // printf("packet %d from A checksum error \n",packet.seqnum);
     }
     else{
-      printf("packet %d incorrect packet seq\n",packet.seqnum);
+      // printf("duplicate packet seq %d\n",packet.seqnum);
+      packet.acknum = packet.seqnum;
+      check_summ = pkt_checksum(packet.seqnum,packet.acknum,packet.payload);
+      packet.checksum = check_summ;
+      // printf("B send duplicate ACK of %d\n",packet.acknum);
+      tolayer3(B, packet);
     }
     
     return;
@@ -182,7 +198,7 @@ void push_msg(struct msg message){
 
 struct msg_buffer* pop_msg(){
   if(list_head==NULL){
-    printf("Empty list\n");
+    // printf("Empty list\n");
     return NULL;
   }
   struct msg_buffer* message = list_head;
@@ -203,4 +219,10 @@ int pkt_checksum(int seq,int ack,char* msg_ptr){
   sum += ack;
   sum += seq;
   return sum;
+}
+void print_msg(char* message){
+  for(int i=0;i<MSG_SIZE;i++){
+    // printf("%c",message[i]);
+  }
+  // printf("\n");
 }

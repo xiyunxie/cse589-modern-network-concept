@@ -18,8 +18,8 @@
 /********* STUDENTS WRITE THE NEXT SEVEN ROUTINES *********/
 #define BUFFER_SIZE 1000
 #define MSG_SIZE 20
-#define TIMEOUT 10.0
-#define TIMECHECK 2.0
+#define TIMEOUT 30.0
+#define TIMECHECK 5.0
 int A = 0;
 int B = 1;
 int base_A = 0;
@@ -53,20 +53,33 @@ int current_time = 0;
 struct pkt* create_pkt(int seqnum, int acknum,char *message);
 int pkt_checksum(int seq,int ack,char* msg_ptr);
 void A_push_msg(struct msg message,int seqnum,int acknum);
+void print_msg(char* message);
 /* called from layer 5, passed the data to be sent to other side */
 void A_output(message)
   struct msg message;
 {
   //will create packet at list tail, ack is 0 for A
   A_push_msg(message,a_buffer_count,0);
+  printf("A receive msg from layer 5:\n");
+  print_msg(message.data);
   a_buffer_count++;
-  if(next_seq>=base_A+window_size) return;//refuse data
+  if(next_seq>=base_A+window_size){
+    printf("not able to send next packet\n");
+    return;//refuse data
+  } 
   if(A_buffer[next_seq].occupied==0){
     printf("no more packets\n");
     return;
   }
+  printf("A send seq of %d\n",A_buffer[next_seq].packet.seqnum);
+  print_msg(A_buffer[next_seq].packet.payload);
   tolayer3(A,A_buffer[next_seq].packet);
-  A_buffer[next_seq].expire_time = current_time+TIMEOUT;
+  if(next_seq==0){
+    A_buffer[next_seq].expire_time = current_time+TIMEOUT;
+  }
+  else{
+    A_buffer[next_seq].expire_time = A_buffer[next_seq-1].expire_time+TIMEOUT;
+  }
   next_seq++;
   if(timeron==0){
     starttimer(A,TIMECHECK);
@@ -81,9 +94,11 @@ void A_input(packet)
 {
   int checksum = pkt_checksum(packet.seqnum,packet.acknum,packet.payload);
   if(checksum==packet.checksum){
+    printf("A receive ack of %d\n",packet.acknum);
     if(packet.acknum < base_A+window_size && packet.acknum >= base_A){
       //check if ack received at position base_A
       if(A_buffer[base_A].packet.seqnum == packet.acknum){
+        
         A_buffer[packet.acknum].acked=1;
         base_A = packet.acknum+1;
         if(base_A == next_seq){
@@ -97,6 +112,7 @@ void A_input(packet)
         //send the packets between next_seq and window's end
         
           int extra_send=0;
+          printf("A send the packets between next_seq and window's end\n");
           printf("========================\n");
           //send_packet_nextseq_to_windows_end();
           for(int i=next_seq;i<base_A+window_size;i++){
@@ -113,16 +129,16 @@ void A_input(packet)
       }
       else{//set packets to be acked, so that they won't be retransmitted when time out
         A_buffer[packet.acknum].acked=1;
-        
+        printf("A buffer ack of %d\n",packet.acknum);
       }
     }
     else{
-      printf("get out of range ack\n");
+      printf("A get out of range ack\n");
       return;
     }
   }
   else{
-    printf("checksum error\n");
+    printf("A input() checksum error\n");
     return;
   }
 }
@@ -139,8 +155,9 @@ void A_timerinterrupt()
     if(A_buffer[i].occupied==0) break;
     if(current_time>A_buffer[i].expire_time&&A_buffer[i].acked==0){
       //packet expired and not acked
+      printf("A redo send seq %d\n",A_buffer[i].packet.seqnum);
       tolayer3(A,A_buffer[i].packet);
-      printf("A send seq %d\n",A_buffer[i].packet.seqnum);
+      
     }
     
   }
@@ -156,7 +173,7 @@ void A_init()
   for(int i=0;i<BUFFER_SIZE;i++){
     A_buffer[i].acked=0;
     A_buffer[i].seq=i;
-    memcpy(&A_buffer[i].packet,'\0',sizeof(struct pkt));
+    memset(&A_buffer[i].packet,'\0',sizeof(struct pkt));
   }
 }
 
@@ -168,20 +185,27 @@ void B_input(packet)
 {
   int checksum = pkt_checksum(packet.seqnum,packet.acknum,packet.payload);
   if(checksum == packet.checksum){
+    printf("B get seq of %d\n",packet.seqnum);
+    
     //check if in range
     if(packet.seqnum<base_B+window_size&&packet.seqnum>=base_B){
-      B_buffer[packet.acknum].acked = 1;
+      //buffer this message
+      for(int i=0;i<MSG_SIZE;i++){
+        B_buffer[packet.seqnum].packet.payload[i] = packet.payload[i];
+      }
+      B_buffer[packet.seqnum].acked = 1;
       if(packet.seqnum == base_B){
         //need to check if current packet fills a gap
         while(1){
           if(B_buffer[base_B].acked==1){
             //send data to layer 5
-            tolayer5(B,packet.payload);
+            tolayer5(B,B_buffer[base_B].packet.payload);
             //send ack
             free(B_ACK_PKT);
             B_ACK_PKT = create_pkt(0,base_B,B_ACK_PKT_payload);
-            tolayer3(B,*B_ACK_PKT);
             printf("B send ack of %d\n",base_B);
+            tolayer3(B,*B_ACK_PKT);
+            
             base_B++;
           }
           else break;
@@ -189,8 +213,10 @@ void B_input(packet)
       }
       else{//B get out of order but in-window packet
         //save packet in buffer
-        memcpy(&B_buffer[packet.seqnum].packet,&packet,sizeof(packet));
-        B_buffer[packet.seqnum].acked==1;
+        printf("B buffer seq %d\n",packet.seqnum);
+        
+        // memcpy(&B_buffer[packet.seqnum].packet,&packet,sizeof(packet));
+        // B_buffer[packet.seqnum].acked=1;
         //send ack
         free(B_ACK_PKT);
         B_ACK_PKT = create_pkt(0,packet.seqnum,B_ACK_PKT_payload);
@@ -203,15 +229,16 @@ void B_input(packet)
     }
     else{//out of window seq, check if a ack is needed
       if(packet.acknum>=base_B-window_size&&packet.acknum<base_B+window_size){
+        free(B_ACK_PKT);
         B_ACK_PKT = create_pkt(0,packet.seqnum,B_ACK_PKT_payload);
         tolayer3(B,*B_ACK_PKT);
-        printf("B send ack of %d\n",packet.seqnum);
+        printf("B send old ack of %d\n",packet.seqnum);
       }
     }
   }
   else{//if packet seq is in range[base_B-window_size,base_B+window_size],send ack only
     
-    printf("check sum error\n");
+    printf("B receive check sum error\n");
     return;
   }
 }
@@ -225,7 +252,7 @@ void B_init()
   for(int i=0;i<BUFFER_SIZE;i++){
     B_buffer[i].acked=0;
     B_buffer[i].acknum=i;
-    memcpy(&B_buffer[i].packet,'\0',sizeof(struct pkt));
+    memset(&B_buffer[i].packet,'\0',sizeof(struct pkt));
   }
   
   
@@ -251,10 +278,21 @@ struct pkt* create_pkt(int seqnum, int acknum,char *message){
 }
 
 void A_push_msg(struct msg message,int seqnum,int acknum){
- 
+  // printf("in push\n");
   struct pkt *packet = create_pkt(seqnum,acknum,message.data);
-  memcpy(&A_buffer[seqnum].packet,packet,sizeof(packet));
+  for(int i=0;i<MSG_SIZE;i++){
+    A_buffer[seqnum].packet.payload[i] = packet->payload[i];
+  }
+  A_buffer[seqnum].packet.seqnum = seqnum;
+  A_buffer[seqnum].packet.checksum = packet->checksum;
+  A_buffer[seqnum].packet.acknum  = acknum;
   A_buffer[seqnum].occupied = 1;
   free(packet);
-  
+  // printf("push done\n");
+}
+void print_msg(char* message){
+  for(int i=0;i<MSG_SIZE;i++){
+    printf("%c",message[i]);
+  }
+  printf("\n");
 }
